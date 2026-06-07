@@ -1,0 +1,62 @@
+{
+  "name": "RFDTool",
+  "script": "main.nut",
+  "target": "appimage",
+  "script_dirs": [
+    "src",
+    "test"
+  ],
+  "native_projects": [
+    {
+      "name": "gserial",
+      "repo": "https://github.com/supercamel/gserial.git",
+      "dir": ".sqgipkg/native/gserial",
+      "branch": "master",
+      "update": true,
+      "build": [
+        "meson setup build --wipe || meson setup build",
+        "meson compile -C build"
+      ],
+      "libraries": [
+        "build/libgserial-1.0.so"
+      ],
+      "typelibs": [
+        "build/GSerial-1.0.typelib"
+      ]
+    }
+  ],
+  "linux": {
+    "deb": {
+      "download": true,
+      "packages": [
+        "libgtk-4-1",
+        "gir1.2-gtk-4.0",
+        "libglib2.0-0",
+        "libgirepository-1.0-1"
+      ]
+    }
+  },
+  "windows": {
+    "msys2_prefix": "mingw64",
+    "gdk_backend": "win32",
+    "native_projects": [
+      {
+        "name": "gserial",
+        "repo": "https://github.com/supercamel/gserial.git",
+        "dir": ".sqgipkg/native/gserial",
+        "branch": "master",
+        "update": true,
+        "build": [
+          "meson setup build-windows --wipe --cross-file \"$SQGI_MESON_CROSS_FILE\" || meson setup build-windows --cross-file \"$SQGI_MESON_CROSS_FILE\"",
+          "meson compile -C build-windows"
+        ],
+        "libraries": [
+          "build-windows/libgserial-1.0.dll"
+        ],
+        "typelibs": [
+          "build-windows/GSerial-1.0.typelib"
+        ]
+      }
+    ]
+  }
+}

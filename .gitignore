@@ -1,0 +1,10 @@
+build*/
+dist*/
+.sqgipkg/cache/
+.sqgipkg/native/
+.sqgipkg/native/*/build/
+.sqgipkg/native/*/build-*/
+*.cnut
+*.log
+rfdtool-profile.json
+modem-capture-*.txt
