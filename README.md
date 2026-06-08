@@ -6,6 +6,25 @@ modems through the SiK/RFD AT command interface.
 It is written in SQGI/Squirrel and uses the GSerial native module for serial
 port access.
 
+## Downloads
+
+Prebuilt binaries are attached to each [GitHub release](../../releases):
+
+- `RFDTool-x86_64.AppImage` — Linux on Intel/AMD 64-bit.
+- `RFDTool-aarch64.AppImage` — Linux on ARM 64-bit (e.g. Raspberry Pi OS 64-bit).
+- `RFDTool-Setup.exe` — Windows installer.
+
+Make an AppImage executable before running it:
+
+```sh
+chmod +x RFDTool-x86_64.AppImage
+./RFDTool-x86_64.AppImage
+```
+
+Releases are produced by the `.github/workflows/release.yml` GitHub Actions
+workflow, which builds all three targets with `sqgipkg` and uploads them when a
+`v*` tag is pushed.
+
 ## Features
 
 - Connect to local RFD/SiK radios over a serial port.
@@ -98,12 +117,27 @@ That means packaged builds can fetch and build GSerial through `sqgipkg`; the
 GSerial checkout under `.sqgipkg/native/` is generated build state and is not
 committed to this repository.
 
-Build an AppImage:
+The manifest defines a `linux.arches` matrix (x86_64 and aarch64) plus a Windows
+target, so every artifact can be cross-built from a single Linux host:
 
 ```sh
 sqgipkg --doctor
-sqgipkg --target appimage --smoke-test "--self-test"
+sqgipkg --target appimage --appimage-arch x86_64
+sqgipkg --target appimage --appimage-arch aarch64
+sqgipkg --target win-nsis
 ```
+
+The aarch64 and Windows targets are cross-compiled. On an x86_64 Ubuntu host they
+need the cross toolchains:
+
+```sh
+sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static \
+  mingw-w64 nsis
+```
+
+`sqgipkg` downloads the matching sysroots, builds the SQGI runtime and GSerial
+for each target, and writes the AppImages and the NSIS installer under
+`dist-linux-x86_64/`, `dist-linux-aarch64/`, and `dist-windows-x86_64/`.
 
 ## Serial Permissions
 
