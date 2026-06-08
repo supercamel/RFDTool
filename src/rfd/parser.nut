@@ -82,16 +82,29 @@ function parse_firmware(text) {
 
 function parse_number_prefix(line) {
     if (line.len() < 2) return null
-    local reg = line.slice(0, 1).toupper()
-    if (reg != "S" && reg != "R") return null
-    local i = 1
+    local first = line.slice(0, 1).toupper()
+    local reg
+    local start
+    if (first == "S" || first == "R") {
+        // SiK/RFD firmware that prefixes registers with the bank letter, e.g. "S4:TXPOWER=20".
+        reg = first
+        start = 1
+    } else if (first >= "0" && first <= "9") {
+        // Older SiK firmware (e.g. RFD900A SiK 1.13) emits bare register numbers
+        // with no bank letter, e.g. " 4:TXPOWER=20". Treat these as S registers.
+        reg = "S"
+        start = 0
+    } else {
+        return null
+    }
+    local i = start
     while (i < line.len()) {
         local ch = line.slice(i, i + 1)
         if (ch < "0" || ch > "9") break
         i++
     }
-    if (i == 1) return null
-    return { reg = reg, num = line.slice(1, i).tointeger(), rest = U.trim(line.slice(i)) }
+    if (i == start) return null
+    return { reg = reg, num = line.slice(start, i).tointeger(), rest = U.trim(line.slice(i)) }
 }
 
 function parse_range(rest) {
