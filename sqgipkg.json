@@ -93,6 +93,9 @@
             "branch": "master",
             "update": true,
             "build": [
+              "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host --wipe || env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host",
+              "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson compile -C build-host",
+              "sh ../../../scripts/disable-cross-gir.sh meson.build",
               "meson setup build-linux-aarch64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"} --wipe || meson setup build-linux-aarch64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"}",
               "meson compile -C build-linux-aarch64"
             ],
@@ -100,7 +103,7 @@
               "build-linux-aarch64/libgserial-1.0.so"
             ],
             "typelibs": [
-              "build-linux-aarch64/GSerial-1.0.typelib"
+              "build-host/GSerial-1.0.typelib"
             ]
           }
         ]
