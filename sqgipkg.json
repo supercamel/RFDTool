@@ -38,7 +38,8 @@
             "libgtk-4-1",
             "gir1.2-gtk-4.0",
             "libglib2.0-0",
-            "libgirepository-1.0-1"
+            "libgirepository-1.0-1",
+            "libharfbuzz-gobject0"
           ]
         },
         "build": [
@@ -77,7 +78,8 @@
             "libgtk-4-1",
             "gir1.2-gtk-4.0",
             "libglib2.0-0",
-            "libgirepository-1.0-1"
+            "libgirepository-1.0-1",
+            "libharfbuzz-gobject0"
           ]
         },
         "build": [
