@@ -2,6 +2,10 @@
   "name": "RFDTool",
   "script": "main.nut",
   "target": "appimage",
+  "sqgi_source": {
+    "repo": "https://github.com/supercamel/sqgi.git",
+    "ref": "v0.1.6-alpha"
+  },
   "native_projects": [
     {
       "name": "gserial",
@@ -29,6 +33,7 @@
         "inherit_native_projects": false,
         "deb": {
           "download": true,
+          "suite": "jammy",
           "packages": [
             "libgtk-4-1",
             "gir1.2-gtk-4.0",
@@ -67,6 +72,7 @@
         "inherit_native_projects": false,
         "deb": {
           "download": true,
+          "suite": "jammy",
           "packages": [
             "libgtk-4-1",
             "gir1.2-gtk-4.0",

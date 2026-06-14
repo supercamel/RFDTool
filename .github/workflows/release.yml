@@ -27,7 +27,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout RFDTool
         uses: actions/checkout@v4
@@ -38,6 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: supercamel/sqgi
+          ref: v0.1.6-alpha
           path: sqgi
 
       - name: Install build dependencies
