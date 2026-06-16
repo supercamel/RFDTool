@@ -135,13 +135,15 @@
           "meson setup build-windows --wipe --cross-file \"$SQGI_MESON_CROSS_FILE\" || meson setup build-windows --cross-file \"$SQGI_MESON_CROSS_FILE\"",
           "meson compile -C build-windows",
           "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host --wipe || env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host",
-          "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson compile -C build-host"
+          "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson compile -C build-host",
+          "sed 's/shared-library=\"libgserial-1.0.so\"/shared-library=\"libgserial-1.0.dll\"/' build-host/GSerial-1.0.gir > build-windows/GSerial-1.0.gir",
+          "g-ir-compiler build-windows/GSerial-1.0.gir --output build-windows/GSerial-1.0.typelib"
         ],
         "libraries": [
           "build-windows/libgserial-1.0.dll"
         ],
         "typelibs": [
-          "build-host/GSerial-1.0.typelib"
+          "build-windows/GSerial-1.0.typelib"
         ]
       }
     ]
