@@ -118,4 +118,5 @@ if (has_arg("--gtk-refresh-local-test") || has_arg("--gtk-edit-param-test") ||
 } else {
     app = UI.create_app()
 }
+if (app == null) return 0
 return app.run(0, null)

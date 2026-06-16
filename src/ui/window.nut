@@ -14,6 +14,7 @@ local Profile = import("../rfd/profile.nut")
 local APP_NAME = "RFDTool"
 local APP_ID = "com.github.supercamel.rfdtool"
 local APP_ICON_NAME = APP_ID
+local DESKTOP_RELAUNCH_ENV = "RFD_TOOL_DESKTOP_RELAUNCHED"
 
 local W = {}
 local State = {
@@ -81,44 +82,97 @@ function desktop_exec_quote(value) {
     local out = "\""
     for (local i = 0; i < value.len(); i++) {
         local ch = value.slice(i, i + 1)
+        if (ch == "%") out += "%%"
+        else if (ch == "\\" || ch == "\"" || ch == "$" || ch == "`") out += "\\" + ch
+        else out += ch
+    }
+    return out + "\""
+}
+
+function command_quote(value) {
+    local out = "\""
+    for (local i = 0; i < value.len(); i++) {
+        local ch = value.slice(i, i + 1)
         if (ch == "\\" || ch == "\"" || ch == "$" || ch == "`") out += "\\" + ch
         else out += ch
     }
     return out + "\""
 }
 
+function desktop_launch_exec(appimage) {
+    return "env " + DESKTOP_RELAUNCH_ENV + "=1 " + desktop_exec_quote(appimage) + " %U"
+}
+
+function maybe_spawn_command(command, label) {
+    try {
+        GLib.spawn_command_line_async(command)
+    } catch (e) {
+        print(label + " warning: " + e + "\n")
+    }
+}
+
+function refresh_desktop_integration(desktop_dir, icon_theme_dir) {
+    if (GLib.find_program_in_path("update-desktop-database") != null)
+        maybe_spawn_command("update-desktop-database " + command_quote(desktop_dir), "desktop database")
+
+    if (GLib.find_program_in_path("gtk-update-icon-cache") != null)
+        maybe_spawn_command("gtk-update-icon-cache -q -t -f " + command_quote(icon_theme_dir), "icon cache")
+}
+
+function remove_owned_desktop_file(path) {
+    if (!path_exists(path)) return
+
+    try {
+        local text = GLib.file_get_contents(path)
+        if (text.find("RFDTool") == null) return
+        if (text.find("X-RFDTool-AppImage=true") == null &&
+            text.find("Icon=rfdtool") == null &&
+            text.find("StartupWMClass=rfdtool") == null) return
+        GLib.remove(path)
+    } catch (e) {
+        print("desktop cleanup warning: " + e + "\n")
+    }
+}
+
+function maybe_relaunch_from_desktop(desktop_path) {
+    if (GLib.getenv("APPIMAGE") == null || GLib.getenv("APPIMAGE") == "") return false
+    if (GLib.getenv(DESKTOP_RELAUNCH_ENV) == "1") return false
+    if (GLib.getenv("RFD_TOOL_DISABLE_DESKTOP_RELAUNCH") == "1") return false
+
+    try {
+        local info = Gio.DesktopAppInfo.new(APP_ID + ".desktop")
+        if (info == null) info = Gio.DesktopAppInfo.new_from_filename(desktop_path)
+        if (info == null) return false
+        return info.launch(null, null)
+    } catch (e) {
+        print("desktop relaunch warning: " + e + "\n")
+        return false
+    }
+}
+
 // GNOME/Wayland resolves dock icons through a desktop file visible to the shell.
 function install_appimage_desktop_entry(app_id) {
-    if (app_id != APP_ID) return
+    if (app_id != APP_ID) return null
 
     local appimage = GLib.getenv("APPIMAGE")
-    if (appimage == null || appimage == "") return
+    if (appimage == null || appimage == "") return null
 
     local data_dir = GLib.get_user_data_dir()
     local appdir = GLib.getenv("SQGI_APPDIR")
-    if (data_dir == null || data_dir == "" || appdir == null || appdir == "") return
+    if (data_dir == null || data_dir == "" || appdir == null || appdir == "") return null
 
     try {
         local desktop_dir = GLib.build_filenamev([data_dir, "applications"])
-        local icon_dir = GLib.build_filenamev([data_dir, "icons", "hicolor", "256x256", "apps"])
+        local icon_theme_dir = GLib.build_filenamev([data_dir, "icons", "hicolor"])
+        local icon_dir = GLib.build_filenamev([icon_theme_dir, "256x256", "apps"])
         GLib.mkdir_with_parents(desktop_dir, 493)
         GLib.mkdir_with_parents(icon_dir, 493)
 
         local desktop_path = GLib.build_filenamev([desktop_dir, APP_ID + ".desktop"])
         local icon_path = GLib.build_filenamev([icon_dir, APP_ICON_NAME + ".png"])
-        local desktop =
-            "[Desktop Entry]\n" +
-            "Type=Application\n" +
-            "Name=" + APP_NAME + "\n" +
-            "Exec=" + desktop_exec_quote(appimage) + " %U\n" +
-            "Icon=" + APP_ICON_NAME + "\n" +
-            "Categories=Utility;GTK;\n" +
-            "Terminal=false\n" +
-            "StartupWMClass=" + APP_ID + "\n" +
-            "X-RFDTool-AppImage=true\n"
+        local desktop_icon = APP_ICON_NAME
 
-        GLib.file_set_contents(desktop_path, desktop, -1)
-        GLib.chmod(desktop_path, 420)
+        remove_owned_desktop_file(GLib.build_filenamev([desktop_dir, "rfdtool.desktop"]))
 
         local icon_candidates = [
             GLib.build_filenamev([appdir, "usr", "share", "icons", "hicolor", "256x256", "apps", APP_ICON_NAME + ".png"]),
@@ -133,11 +187,31 @@ function install_appimage_desktop_entry(app_id) {
                 null,
                 null
             )
+            desktop_icon = icon_path
             break
         }
+
+        local desktop =
+            "[Desktop Entry]\n" +
+            "Type=Application\n" +
+            "Name=" + APP_NAME + "\n" +
+            "Exec=" + desktop_launch_exec(appimage) + "\n" +
+            "Icon=" + desktop_icon + "\n" +
+            "Categories=Utility;GTK;\n" +
+            "Terminal=false\n" +
+            "StartupNotify=true\n" +
+            "StartupWMClass=" + APP_ID + "\n" +
+            "X-RFDTool-AppImage=true\n"
+
+        GLib.file_set_contents(desktop_path, desktop, -1)
+        GLib.chmod(desktop_path, 493)
+        refresh_desktop_integration(desktop_dir, icon_theme_dir)
+
+        return desktop_path
     } catch (e) {
         print("desktop integration warning: " + e + "\n")
     }
+    return null
 }
 
 function label(text, xalign = 0.0) {
@@ -1298,7 +1372,9 @@ function create_app(options = null) {
     local app_id = options != null && ("app_id" in options) ? options.app_id : APP_ID
     GLib.set_prgname(app_id)
     GLib.set_application_name(APP_NAME)
-    install_appimage_desktop_entry(app_id)
+    Gtk.Window.set_default_icon_name(APP_ICON_NAME)
+    local desktop_path = install_appimage_desktop_entry(app_id)
+    if (desktop_path != null && maybe_relaunch_from_desktop(desktop_path)) return null
 
     local app = Gtk.Application.new(app_id, Gio.ApplicationFlags.flags_none)
     app.connect("activate", function() {
