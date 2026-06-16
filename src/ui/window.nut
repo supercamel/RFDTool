@@ -137,8 +137,7 @@ function install_appimage_desktop_entry(app_id) {
 
     try {
         local desktop_dir = GLib.build_filenamev([data_dir, "applications"])
-        local icon_theme_dir = GLib.build_filenamev([data_dir, "icons", "hicolor"])
-        local icon_dir = GLib.build_filenamev([icon_theme_dir, "256x256", "apps"])
+        local icon_dir = GLib.build_filenamev([data_dir, "icons", "hicolor", "256x256", "apps"])
         GLib.mkdir_with_parents(desktop_dir, 493)
         GLib.mkdir_with_parents(icon_dir, 493)
 
