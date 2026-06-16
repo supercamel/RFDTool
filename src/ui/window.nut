@@ -1,5 +1,6 @@
 local GLib = import("GLib")
 local Gio = import("Gio")
+local Gdk = import("Gdk", "4.0")
 local Gtk = import("Gtk", "4.0")
 local cairo = import("cairo")
 
@@ -9,6 +10,9 @@ local SessionMod = import("../rfd/session.nut")
 local Parser = import("../rfd/parser.nut")
 local Model = import("../rfd/model.nut")
 local Profile = import("../rfd/profile.nut")
+
+local APP_ID = "com.github.supercamel.rfdtool"
+local APP_ICON_NAME = APP_ID
 
 local W = {}
 local State = {
@@ -45,6 +49,31 @@ function init_state() {
     W.param_entries["remote"] <- {}
     State.graph_samples = []
     State.graph_rx_buffer = ""
+}
+
+function path_exists(path) {
+    return Gio.File.new_for_path(path).query_exists(null)
+}
+
+function add_icon_search_path(theme, path) {
+    if (path == null || path == "" || !path_exists(path)) return
+    theme.add_search_path(path)
+}
+
+function register_app_icon() {
+    local display = Gdk.Display.get_default()
+    if (display == null) return
+
+    local theme = Gtk.IconTheme.get_for_display(display)
+    add_icon_search_path(theme, GLib.build_filenamev([GLib.get_current_dir(), "images"]))
+    add_icon_search_path(theme, GLib.build_filenamev([GLib.get_current_dir(), "share", "icons"]))
+    add_icon_search_path(theme, GLib.build_filenamev([GLib.get_current_dir(), "usr", "share", "icons"]))
+
+    local appdir = GLib.getenv("SQGI_APPDIR")
+    if (appdir != null && appdir != "") {
+        add_icon_search_path(theme, GLib.build_filenamev([appdir, "share", "icons"]))
+        add_icon_search_path(theme, GLib.build_filenamev([appdir, "usr", "share", "icons"]))
+    }
 }
 
 function label(text, xalign = 0.0) {
@@ -1202,11 +1231,14 @@ function build_apply_page(nb) {
 
 function create_app(options = null) {
     init_state()
-    local app_id = options != null && ("app_id" in options) ? options.app_id : "au.com.rfdesign.rfdtool"
+    local app_id = options != null && ("app_id" in options) ? options.app_id : APP_ID
     local app = Gtk.Application.new(app_id, Gio.ApplicationFlags.flags_none)
     app.connect("activate", function() {
+        register_app_icon()
+
         local win = Gtk.ApplicationWindow.new(app)
         win.set_title("RFDTool")
+        win.set_icon_name(APP_ICON_NAME)
         win.set_default_size(1180, 760)
         remember("win", win)
         win.connect("close-request", function() {

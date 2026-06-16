@@ -97,10 +97,10 @@ local UI = import("src/ui/window.nut")
 local app
 if (has_arg("--gtk-refresh-local-test") || has_arg("--gtk-edit-param-test") ||
     has_arg("--gtk-apply-local-test") || has_arg("--gtk-save-reboot-local-test")) {
-    local test_app_id = "au.com.rfdesign.rfdtool.refresh-test"
-    if (has_arg("--gtk-edit-param-test")) test_app_id = "au.com.rfdesign.rfdtool.edit-test"
-    if (has_arg("--gtk-apply-local-test")) test_app_id = "au.com.rfdesign.rfdtool.apply-test"
-    if (has_arg("--gtk-save-reboot-local-test")) test_app_id = "au.com.rfdesign.rfdtool.save-reboot-test"
+    local test_app_id = "com.github.supercamel.rfdtool.refresh-test"
+    if (has_arg("--gtk-edit-param-test")) test_app_id = "com.github.supercamel.rfdtool.edit-test"
+    if (has_arg("--gtk-apply-local-test")) test_app_id = "com.github.supercamel.rfdtool.apply-test"
+    if (has_arg("--gtk-save-reboot-local-test")) test_app_id = "com.github.supercamel.rfdtool.save-reboot-test"
 
     app = UI.create_app({
         app_id = test_app_id,

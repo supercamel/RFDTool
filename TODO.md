@@ -55,10 +55,6 @@ Build a GTK4/SQGI utility for configuring an RFD900-class radio modem on
 
 Reference material:
 
-- RFDesign RFD900/RFD900+ SiK software manual:
-  https://files.rfdesign.com.au/Files/documents/Software%20manual.pdf
-- RFDesign RFD900x Point-to-Point/SiK firmware manual:
-  https://rfdesign.com.au/wp-content/uploads/2024/04/RFD900x-Peer-to-peer-V3.X-User-Manual-V1.4.pdf
 - ArduPilot RFD900 overview:
   https://ardupilot.org/copter/docs/common-rfd900.html
 - PX4 SiK radio integration notes:
