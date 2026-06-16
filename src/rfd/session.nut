@@ -20,6 +20,8 @@ class RfdSession {
     busy = false
     default_timeout_ms = 2500
     remote_timeout_ms = 5000
+    remote_reboot_timeout_ms = 30000
+    remote_ready_retry_ms = 1000
 
     constructor(serial_port) {
         serial = serial_port
@@ -122,6 +124,33 @@ class RfdSession {
         }
     }
 
+    async function wait_remote_ready(timeout_ms = null, retry_ms = null) {
+        ensure_open()
+        if (timeout_ms == null) timeout_ms = remote_reboot_timeout_ms
+        if (retry_ms == null) retry_ms = remote_ready_retry_ms
+
+        local start_us = GLib.get_monotonic_time()
+        local last_error = "remote modem did not become ready"
+        while (true) {
+            local elapsed = (GLib.get_monotonic_time() - start_us) / 1000
+            local remaining = timeout_ms - elapsed
+            if (remaining <= 0) throw last_error
+
+            try {
+                await enter_command_mode()
+                local per_try = remaining < remote_timeout_ms ? remaining : remote_timeout_ms
+                if (per_try < 900) per_try = 900
+                local res = await send_raw(at_command("remote", "I"), per_try, true)
+                if (res.ok || U.trim(res.body) != "") return res
+                last_error = "remote modem returned only command echo"
+            } catch (e) {
+                last_error = e
+            }
+
+            await sqgi.sleep(retry_ms)
+        }
+    }
+
     async function send_echo_control(command, timeout_ms = null) {
         ensure_open()
         if (timeout_ms == null) timeout_ms = default_timeout_ms
@@ -202,6 +231,7 @@ class RfdSession {
     async function set_register(scope, meta, value) {
         local validation = Model.validate_value(meta, value, false)
         if (!validation.ok) throw validation.message
+        await enter_command_mode()
         local suffix = meta.reg + meta.num + "=" + value
         local timeout_ms = scope == "remote" ? remote_timeout_ms : 3500
         local res = await send_raw(at_command(scope, suffix), timeout_ms, true)
@@ -239,7 +269,7 @@ class RfdSession {
                 warning = e,
             }
         }
-        in_command_mode = false
+        in_command_mode = scope == "remote"
         return res
     }
 

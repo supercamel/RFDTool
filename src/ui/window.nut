@@ -26,6 +26,8 @@ local State = {
     remote_summary = null,
     dirty_local = {},
     dirty_remote = {},
+    unsaved_local = false,
+    unsaved_remote = false,
     busy = false,
     region_locked = false,
     default_profile = "rfdtool-profile.json",
@@ -483,6 +485,15 @@ function get_dirty(scope) {
     return scope == "remote" ? State.dirty_remote : State.dirty_local
 }
 
+function has_unsaved(scope) {
+    return scope == "remote" ? State.unsaved_remote : State.unsaved_local
+}
+
+function set_unsaved(scope, value) {
+    if (scope == "remote") State.unsaved_remote = value
+    else State.unsaved_local = value
+}
+
 function firmware_for(scope) {
     local summary = scope == "remote" ? State.remote_summary : State.local_summary
     if (summary != null && "firmware" in summary) return summary.firmware
@@ -736,6 +747,8 @@ function rebuild_overview() {
         (State.remote_params == null ? 0 : State.remote_params.len()))
     lines.append("Local staged changes: " + State.dirty_local.len())
     lines.append("Remote staged changes: " + State.dirty_remote.len())
+    lines.append("Local unsaved applied changes: " + (State.unsaved_local ? "yes" : "no"))
+    lines.append("Remote unsaved applied changes: " + (State.unsaved_remote ? "yes" : "no"))
     W.overview_buffer.set_text(U.join(lines, "\n"), -1)
 }
 
@@ -819,7 +832,7 @@ function rebuild_apply_preview() {
     local lines = []
     foreach (scope in ["remote", "local"]) {
         local dirty = get_dirty(scope)
-        if (dirty.len() == 0) continue
+        if (dirty.len() == 0 && !has_unsaved(scope)) continue
         lines.append(scope_label(scope) + " staged commands:")
         local params = get_params(scope)
         foreach (key in Model.sorted_keys(dirty)) {
@@ -830,6 +843,9 @@ function rebuild_apply_preview() {
                 if (p.high_risk) lines.append("    warning: radio-critical or region-sensitive")
                 if (p.error != "") lines.append("    note: " + p.error)
             }
+        }
+        if (has_unsaved(scope)) {
+            lines.append("  # applied changes are not saved to EEPROM yet")
         }
         lines.append("  " + SessionMod.at_command(scope, "&W") + "    # only when Save is selected")
         lines.append("")
@@ -864,6 +880,8 @@ async function connect_port() {
         State.serial.close()
         await SerialMod.drain_retired_ports()
         State.session = null
+        State.unsaved_local = false
+        State.unsaved_remote = false
         set_busy(false, "Disconnected")
         return
     }
@@ -885,6 +903,8 @@ async function connect_port() {
         throw "failed to open serial port"
     }
     State.session = SessionMod.RfdSession(State.serial)
+    State.unsaved_local = false
+    State.unsaved_remote = false
     try {
         await State.session.enter_command_mode()
     } catch (e) {
@@ -909,7 +929,10 @@ async function load_scope(scope) {
 async function apply_scope(scope, do_save = false, do_reboot = false) {
     if (State.session == null) throw "not connected"
     local dirty = get_dirty(scope)
-    if (dirty.len() == 0) {
+    local dirty_count = dirty.len()
+    local needs_save = do_save && (dirty_count > 0 || has_unsaved(scope))
+    local needs_reboot = do_reboot && (dirty_count > 0 || has_unsaved(scope))
+    if (dirty_count == 0 && !needs_save && !needs_reboot) {
         set_status("No " + scope_label(scope) + " changes to apply")
         return
     }
@@ -922,11 +945,22 @@ async function apply_scope(scope, do_save = false, do_reboot = false) {
         p.value = dirty[key]
         p.dirty = false
     }
-    if (do_save) await State.session.save(scope)
+    if (dirty_count > 0 && !do_save) set_unsaved(scope, true)
+    if (needs_save) {
+        set_busy(true, "Saving " + scope_label(scope))
+        await State.session.save(scope)
+        set_unsaved(scope, false)
+    }
     if (do_reboot) {
+        set_busy(true, "Rebooting " + scope_label(scope))
         await State.session.reboot(scope)
-        await sqgi.sleep(2500)
-        await State.session.enter_command_mode()
+        if (scope == "remote") {
+            set_busy(true, "Waiting for Remote reboot")
+            await State.session.wait_remote_ready()
+        } else {
+            await sqgi.sleep(2500)
+            await State.session.enter_command_mode()
+        }
     }
     dirty.clear()
     await load_scope(scope)
@@ -934,8 +968,14 @@ async function apply_scope(scope, do_save = false, do_reboot = false) {
 }
 
 async function apply_both(do_save = false, do_reboot = false) {
-    if (State.dirty_remote.len() > 0) await apply_scope("remote", do_save, do_reboot)
-    if (State.dirty_local.len() > 0) await apply_scope("local", do_save, do_reboot)
+    local remote_needed = State.dirty_remote.len() > 0 || (do_save && State.unsaved_remote) || (do_reboot && State.unsaved_remote)
+    local local_needed = State.dirty_local.len() > 0 || (do_save && State.unsaved_local) || (do_reboot && State.unsaved_local)
+    if (!remote_needed && !local_needed) {
+        set_busy(false, "No changes to apply")
+        return
+    }
+    if (remote_needed) await apply_scope("remote", do_save, do_reboot)
+    if (local_needed) await apply_scope("local", do_save, do_reboot)
     set_busy(false, "Apply complete")
 }
 
@@ -961,6 +1001,8 @@ async function factory_reset(scope) {
     set_busy(true, "Factory reset " + scope_label(scope))
     await State.session.factory_reset(scope)
     await State.session.save(scope)
+    set_unsaved(scope, false)
+    rebuild_apply_preview()
     set_busy(false, scope_label(scope) + " factory defaults staged and saved")
 }
 
@@ -970,6 +1012,8 @@ async function set_encryption_key(scope) {
     set_busy(true, "Writing " + scope_label(scope) + " encryption key")
     local res = await State.session.encryption(scope, key)
     append_result(scope_label(scope) + " encryption", res.body)
+    set_unsaved(scope, true)
+    rebuild_apply_preview()
     set_busy(false, "Encryption key sent; remember to save both radios")
 }
 
@@ -988,6 +1032,9 @@ async function set_encryption_key_both() {
     append_result("Remote encryption", remote_res.body)
     local local_res = await State.session.encryption("local", key)
     append_result("Local encryption", local_res.body)
+    set_unsaved("remote", true)
+    set_unsaved("local", true)
+    rebuild_apply_preview()
     set_busy(false, "Same AES key sent to both radios; remember to save both")
 }
 

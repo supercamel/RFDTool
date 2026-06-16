@@ -12,6 +12,9 @@ class FakeSerial {
     buffer = ""
     writes = null
     open = true
+    remote_s4 = 30
+    remote_reboot_echoes = 0
+    remote_ready_polls = 0
 
     constructor() {
         writes = []
@@ -32,8 +35,10 @@ class FakeSerial {
     function write(text) {
         writes.append(text)
         local cmd = U.trim(text)
-        if (cmd == "+++") {
+        if (text == "+++") {
             respond("OK\r\n")
+        } else if (cmd == "+++") {
+            respond(cmd + "\r\n")
         } else if (cmd == "ATI") {
             respond("ATI\r\nRFD SiK 3.16 on RFD900x R1.3-AU\r\nOK\r\n")
         } else if (cmd == "ATI1" || cmd == "ATI2" || cmd == "ATI3" ||
@@ -58,6 +63,24 @@ class FakeSerial {
             respond("AT&T\r\n")
         } else if (cmd == "ATO") {
             respond("ATO\r\nOK\r\n")
+        } else if (cmd == "RTS4?") {
+            respond("RTS4?\r\n" + remote_s4 + "\n")
+        } else if (cmd == "RTS4=15") {
+            remote_s4 = 15
+            respond("RTS4=15\r\nOK\n")
+        } else if (cmd == "RT&W") {
+            respond("RT&W\r\nOK\n")
+        } else if (cmd == "RTZ") {
+            remote_reboot_echoes = 2
+            respond("RTZ\r\n")
+        } else if (cmd == "RTI") {
+            remote_ready_polls++
+            if (remote_reboot_echoes > 0) {
+                remote_reboot_echoes--
+                respond("RTI\r\n")
+            } else {
+                respond("RTI\r\nRFD SiK 3.16 on RFD900x R1.3-AU\r\nOK\r\n")
+            }
         } else {
             respond(cmd + "\r\nERROR\r\n")
         }
@@ -72,6 +95,8 @@ async function run() {
     local session = SessionMod.RfdSession(serial)
     await session.enter_command_mode()
     check("entered command mode", session.in_command_mode)
+    check("escape sent without line ending", serial.writes.find("+++") != null)
+    check("escape not sent with CRLF", serial.writes.find("+++\r\n") == null)
 
     local loaded = await session.load_side("local")
     check("load firmware", loaded.summary.firmware.region == "AU")
@@ -97,6 +122,20 @@ async function run() {
     check("TDM debug command emitted", serial.writes.find("AT&T=TDM\r\n") != null)
     await session.diagnostics("local", "stop")
     check("debug stop command emitted", serial.writes.find("AT&T\r\n") != null)
+
+    local remote_meta = Model.fallback_metadata().S4
+    await session.set_register("remote", remote_meta, 15)
+    check("remote TXPOWER set command emitted", serial.writes.find("RTS4=15\r\n") != null)
+    await session.save("remote")
+    check("remote save command emitted", serial.writes.find("RT&W\r\n") != null)
+    await session.reboot("remote")
+    check("remote reboot command emitted", serial.writes.find("RTZ\r\n") != null)
+    check("remote reboot keeps local command mode", session.in_command_mode)
+    local ready = await session.wait_remote_ready(3000, 20)
+    check("remote ready waits through echo-only responses", serial.remote_ready_polls >= 3)
+    check("remote ready returns firmware", ready.body.find("RFD") != null)
+    local remote_current = await session.query_register("remote", "S", 4)
+    check("remote TXPOWER verifies after reboot", remote_current.value == 15)
 
     await session.leave_command_mode()
     check("left command mode", !session.in_command_mode)
