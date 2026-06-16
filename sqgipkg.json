@@ -11,7 +11,7 @@
   "target": "appimage",
   "sqgi_source": {
     "repo": "https://github.com/supercamel/sqgi.git",
-    "ref": "61244e63dab38b21a84023931b41147014b879af"
+    "ref": "3a561e5bc4429283c39380898133f747cc26206f"
   },
   "native_projects": [
     {

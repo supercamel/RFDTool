@@ -89,34 +89,8 @@ function desktop_exec_quote(value) {
     return out + "\""
 }
 
-function command_quote(value) {
-    local out = "\""
-    for (local i = 0; i < value.len(); i++) {
-        local ch = value.slice(i, i + 1)
-        if (ch == "\\" || ch == "\"" || ch == "$" || ch == "`") out += "\\" + ch
-        else out += ch
-    }
-    return out + "\""
-}
-
 function desktop_launch_exec(appimage) {
     return "env " + DESKTOP_RELAUNCH_ENV + "=1 " + desktop_exec_quote(appimage) + " %U"
-}
-
-function maybe_spawn_command(command, label) {
-    try {
-        GLib.spawn_command_line_async(command)
-    } catch (e) {
-        print(label + " warning: " + e + "\n")
-    }
-}
-
-function refresh_desktop_integration(desktop_dir, icon_theme_dir) {
-    if (GLib.find_program_in_path("update-desktop-database") != null)
-        maybe_spawn_command("update-desktop-database " + command_quote(desktop_dir), "desktop database")
-
-    if (GLib.find_program_in_path("gtk-update-icon-cache") != null)
-        maybe_spawn_command("gtk-update-icon-cache -q -t -f " + command_quote(icon_theme_dir), "icon cache")
 }
 
 function remove_owned_desktop_file(path) {
@@ -205,7 +179,6 @@ function install_appimage_desktop_entry(app_id) {
 
         GLib.file_set_contents(desktop_path, desktop, -1)
         GLib.chmod(desktop_path, 493)
-        refresh_desktop_integration(desktop_dir, icon_theme_dir)
 
         return desktop_path
     } catch (e) {

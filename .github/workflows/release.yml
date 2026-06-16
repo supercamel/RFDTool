@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: supercamel/sqgi
-          ref: 61244e63dab38b21a84023931b41147014b879af
+          ref: 3a561e5bc4429283c39380898133f747cc26206f
           path: sqgi
 
       - name: Install build dependencies
