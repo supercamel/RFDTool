@@ -30,9 +30,21 @@ chmod +x RFDTool-x86_64.AppImage
 ./RFDTool-x86_64.AppImage
 ```
 
-On Windows, download and run `RFDTool-Setup.exe`.
+On Windows, download and run:
 
-The default serial device is `/dev/ttyUSB0` at `57600` baud.
+```text
+RFDTool-Setup.exe
+```
+
+Windows users do not need to install SQGI, Ooblerg, MSYS2, MinGW, GTK, or any
+developer tooling just to run RFDTool. The installer contains what the app needs.
+
+Ooblerg is only needed if you want to run or modify RFDTool from source on
+Windows.
+
+The default serial device is `/dev/ttyUSB0` at `57600` baud. On Windows, choose
+the appropriate `COM` port, such as `COM3`, `COM4`, or whichever port your radio
+appears as.
 
 ## Quick Start
 
@@ -80,7 +92,9 @@ especially after rebooting the remote radio.
 
 ## Troubleshooting
 
-If RFDTool cannot open the serial port on Linux, check the device ownership:
+### RFDTool cannot open the serial port on Linux
+
+Check the device ownership:
 
 ```sh
 ls -l /dev/ttyUSB0
@@ -96,13 +110,41 @@ sudo usermod -aG dialout "$USER"
 
 Use the actual group shown by `ls -l` if the device is not owned by `dialout`.
 
-If local refresh works but remote refresh does not, check that the remote radio
-is powered, the antennas are connected, and both radios still agree on link
-settings such as network ID, air speed, frequency range, channel count, ECC,
-MAVLink framing, and encryption.
+### RFDTool cannot open the serial port on Windows
 
-If a setting change breaks the radio link, connect to the affected radio directly
-over serial and restore compatible settings.
+Make sure you selected the correct `COM` port.
+
+You can check the port in Windows Device Manager under:
+
+```text
+Ports (COM & LPT)
+```
+
+Also make sure no other application is currently using the modem. Serial ports
+are usually exclusive, so tools such as Mission Planner, MAVProxy, another
+terminal, or another RFDTool instance may block access.
+
+### Local refresh works, but remote refresh does not
+
+Check that:
+
+- the remote radio is powered;
+- both antennas are connected;
+- the radio link is actually up;
+- both radios still agree on link-critical settings.
+
+Settings that commonly need to match include:
+
+- network ID
+- air speed
+- frequency range
+- channel count
+- ECC
+- MAVLink framing
+- encryption
+
+If a setting change breaks the radio link, connect to the affected radio
+directly over serial and restore compatible settings.
 
 ## Safety
 
@@ -118,12 +160,84 @@ only one side can intentionally break the link until the other side is updated.
 RFDTool is written in SQGI/Squirrel, uses GTK 4 for the interface, and uses the
 GSerial native module for serial port access.
 
-### Running From Source
+The normal source workflow is:
 
-Running directly with `sqgi main.nut` requires SQGI, GSerial, and GTK 4 runtime
-packages to be installed on the system.
+```sh
+sqgi main.nut
+```
 
-Install SQGI from https://github.com/supercamel/sqgi:
+Release packaging is handled by `sqgipkg` and GitHub Actions.
+
+## Windows development with Ooblerg
+
+The recommended Windows development setup is
+[Ooblerg](https://ooblerg.xyz/).
+
+Ooblerg is a Windows package manager and MinGW-w64 sysroot for SQGI, GTK4,
+Vala, Meson, pkg-config, GStreamer, and related native app development. It lets
+you install the tools and libraries RFDTool needs into a managed sysroot, then
+run the app from Command Prompt, PowerShell, or VS Code.
+
+This is the easiest way to hack on RFDTool from Windows without manually setting
+up MSYS2, GTK, MinGW, pkg-config paths, or native library search paths.
+
+### Setup
+
+1. Install [Ooblerg](https://ooblerg.xyz/).
+2. Launch Ooblerg.
+3. Refresh the package index.
+4. Install the packages needed by RFDTool:
+
+```text
+sqgi
+gtk4
+gserial
+```
+
+5. In Ooblerg, check that the MinGW sysroot is added to `PATH`.
+6. Open a fresh Command Prompt, PowerShell window, or VS Code terminal.
+7. Clone and run RFDTool:
+
+```sh
+git clone https://github.com/supercamel/RFDTool.git
+cd RFDTool
+sqgi main.nut
+```
+
+If `sqgi` is not found, close and reopen your terminal after enabling the
+Ooblerg sysroot in `PATH`.
+
+If GTK or GSerial cannot be found, check that `gtk4` and `gserial` are installed
+in Ooblerg.
+
+### Useful Windows commands
+
+Run the self-tests:
+
+```sh
+sqgi main.nut --self-test
+```
+
+Probe a local modem without launching the GUI:
+
+```sh
+sqgi main.nut --probe --device=COM3 --baud=57600
+```
+
+Exercise the local settings load path from the command line:
+
+```sh
+sqgi main.nut --refresh-local --device=COM3 --baud=57600
+```
+
+Replace `COM3` with the actual serial port used by your modem.
+
+## Linux development from source
+
+Running directly with `sqgi main.nut` on Linux requires SQGI, GSerial, and GTK 4
+runtime packages to be installed on the system.
+
+Install SQGI from <https://github.com/supercamel/sqgi>:
 
 ```sh
 git clone https://github.com/supercamel/sqgi.git
@@ -135,9 +249,10 @@ sudo apt install cmake build-essential pkg-config \
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 sudo cmake --install build --prefix /usr/local
+sudo ldconfig
 ```
 
-Install GSerial from https://github.com/supercamel/gserial:
+Install GSerial from <https://github.com/supercamel/gserial>:
 
 ```sh
 git clone https://github.com/supercamel/gserial.git
@@ -166,7 +281,7 @@ cd RFDTool
 sqgi main.nut
 ```
 
-### Useful Commands
+## Useful developer commands
 
 Run the self-tests:
 
@@ -186,7 +301,13 @@ Exercise the local settings load path from the command line:
 sqgi main.nut --refresh-local --device=/dev/ttyUSB0 --baud=57600
 ```
 
-### Packaging
+On Windows, use a `COM` port instead:
+
+```sh
+sqgi main.nut --probe --device=COM3 --baud=57600
+```
+
+## Packaging
 
 The `sqgipkg.json` manifest declares GSerial as a native project:
 
@@ -194,22 +315,56 @@ The `sqgipkg.json` manifest declares GSerial as a native project:
 "repo": "https://github.com/supercamel/gserial.git"
 ```
 
-That means packaged builds can fetch and build GSerial through `sqgipkg`; the
+That means packaged builds can fetch and build GSerial through `sqgipkg`. The
 GSerial checkout under `.sqgipkg/native/` is generated build state and is not
 committed to this repository.
 
-The manifest defines a `linux.arches` matrix for x86_64 and aarch64 plus a
-Windows target, so every artifact can be cross-built from a single Linux host:
+The manifest defines a Linux architecture matrix for x86_64 and aarch64, plus a
+Windows target. Every release artifact can be built from a single Linux host:
+
+- Linux x86_64 AppImage
+- Linux aarch64 AppImage
+- Windows x86_64 NSIS installer
+
+For normal project releases, you do not need to build these manually. The
+`.github/workflows/release.yml` workflow builds all three targets with
+`sqgipkg` and uploads them when a `v*` tag is pushed.
+
+To publish a release:
+
+```sh
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin main
+git push origin v0.1.0
+```
+
+GitHub Actions then builds and uploads the release artifacts.
+
+## Local packaging from Ubuntu
+
+You can also build packages locally from an Ubuntu host.
+
+Check the project first:
 
 ```sh
 sqgipkg --doctor
+```
+
+Build Linux AppImages:
+
+```sh
 sqgipkg --target appimage --appimage-arch x86_64
 sqgipkg --target appimage --appimage-arch aarch64
+```
+
+Build the Windows installer:
+
+```sh
 sqgipkg --target win-nsis
 ```
 
-The aarch64 and Windows targets are cross-compiled. On an x86_64 Ubuntu host they
-need the cross toolchains:
+The aarch64 and Windows targets are cross-compiled. On an x86_64 Ubuntu host,
+install the cross toolchains first:
 
 ```sh
 sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static \
@@ -217,9 +372,36 @@ sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static \
 ```
 
 `sqgipkg` downloads the matching sysroots, builds the SQGI runtime and GSerial
-for each target, and writes the AppImages and the NSIS installer under
-`dist-linux-x86_64/`, `dist-linux-aarch64/`, and `dist-windows-x86_64/`.
+for each target, and writes the release artifacts under:
 
-Releases are produced by the `.github/workflows/release.yml` GitHub Actions
-workflow, which builds all three targets with `sqgipkg` and uploads them when a
-`v*` tag is pushed.
+```text
+dist-linux-x86_64/
+dist-linux-aarch64/
+dist-windows-x86_64/
+```
+
+## Developer setup summary
+
+For users:
+
+```text
+Download RFDTool-Setup.exe or the AppImage.
+```
+
+For Windows developers:
+
+```text
+Install Ooblerg, install sqgi + gtk4 + gserial, then run sqgi main.nut.
+```
+
+For Linux developers:
+
+```text
+Install/build SQGI, install/build GSerial, install GTK4, then run sqgi main.nut.
+```
+
+For releases:
+
+```text
+Push a v* tag and let GitHub Actions build the AppImages and Windows installer.
+```
