@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "name": "RFDTool Serial Test",
+  "app_id": "com.github.supercamel.rfdtool.serialtest",
+  "script": "test-android.nut",
+  "compile_scripts": false,
+  "features": [
+    "gtk4"
+  ],
+  "native": [
+    {
+      "name": "gserial-test",
+      "repo": "https://github.com/supercamel/gserial.git",
+      "ref": "d9bfcbcd59b43ba9bdbdc055fc928261efdb3562",
+      "dir": ".sqgipkg/native/gserial-android-test",
+      "build_system": "meson",
+      "options": {
+        "android_test_backend": true
+      },
+      "gi": {
+        "strategy": "target",
+        "namespace": "GSerial",
+        "version": "1.0",
+        "library": "gserial-1.0"
+      }
+    }
+  ],
+  "platforms": {
+    "android": {
+      "architectures": [
+        "x86_64"
+      ],
+      "sdk": "noble-android-r4",
+      "min_sdk": 31,
+      "namespaces": [
+        "Gtk-4.0",
+        "GSerial-1.0"
+      ]
+    }
+  }
+}

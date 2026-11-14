@@ -2,10 +2,12 @@ local GLib = import("GLib")
 local Gio = import("Gio")
 local Gdk = import("Gdk", "4.0")
 local Gtk = import("Gtk", "4.0")
+local Pango = import("Pango")
 local cairo = import("cairo")
 
 local U = import("../util.nut")
 local SerialMod = import("../serial/port.nut")
+local DevicesMod = import("../serial/devices.nut")
 local SessionMod = import("../rfd/session.nut")
 local Parser = import("../rfd/parser.nut")
 local Model = import("../rfd/model.nut")
@@ -20,6 +22,8 @@ local W = {}
 local State = {
     serial = null,
     session = null,
+    devices = null,
+    permission_pending = false,
     local_params = null,
     remote_params = null,
     local_summary = null,
@@ -198,6 +202,8 @@ function value_label(text) {
     local l = label(text, 0.0)
     l.set_selectable(true)
     l.set_wrap(true)
+    l.set_wrap_mode(Pango.WrapMode.word_char)
+    l.set_max_width_chars(48)
     return l
 }
 
@@ -215,6 +221,24 @@ function hbox(spacing = 6) {
 
 function vbox(spacing = 6) {
     return Gtk.Box.new(Gtk.Orientation.vertical, spacing)
+}
+
+// FlowBox reflows controls as the window rotates or changes size.
+function flowbox() {
+    local box = Gtk.FlowBox.new()
+    box.set_selection_mode(Gtk.SelectionMode.none)
+    box.set_min_children_per_line(1)
+    box.set_max_children_per_line(12)
+    box.set_row_spacing(4)
+    box.set_column_spacing(4)
+    return box
+}
+
+function add_page(nb, page, title) {
+    local scroll = Gtk.ScrolledWindow.new()
+    scroll.set_policy(Gtk.PolicyType.never, Gtk.PolicyType.automatic)
+    scroll.set_child(page)
+    nb.append_page(scroll, Gtk.Label.new(title))
 }
 
 function icon_button(icon_name, tooltip) {
@@ -244,6 +268,52 @@ function set_busy(is_busy, text = "") {
         else W.spinner.stop()
     }
     if (text != "") set_status(text)
+    update_connection_controls()
+}
+
+function update_connection_controls() {
+    local connected = State.serial != null && State.serial.is_open()
+    if ("connect_btn" in W) {
+        W.connect_btn.set_label(State.permission_pending ? "Cancel" : connected ? "Disconnect" : "Connect")
+        W.connect_btn.set_sensitive(!State.busy || State.permission_pending)
+    }
+    foreach (key in ["port_combo", "baud_entry", "scan_btn"]) {
+        if (key in W) W[key].set_sensitive(!State.busy && !connected)
+    }
+    foreach (key in ["local_load", "remote_load"]) {
+        if (key in W) W[key].set_sensitive(!State.busy && connected)
+    }
+    if ("notebook" in W) W.notebook.set_sensitive(!State.busy)
+}
+
+function selected_device_path() {
+    local path = W.port_combo.get_active_id()
+    return path == null ? U.trim(W.port_entry.get_text()) : path
+}
+
+function refresh_devices(preferred = null, report = true) {
+    if (State.devices == null) State.devices = DevicesMod.Devices()
+    local previous = preferred == null ? selected_device_path() : preferred
+    local was_selected = W.port_combo.get_active_id() != null || preferred != null
+    local devices = State.devices.list()
+    W.port_combo.remove_all()
+    local found = false
+    foreach (device in devices) {
+        W.port_combo.append(device.path, device.label)
+        if (device.path == previous) found = true
+    }
+    if (found) W.port_combo.set_active_id(previous)
+    else if (previous != "") {
+        if (was_selected) {
+            // Keep a removed adapter selected, so Connect reports its loss
+            // instead of switching to a different attached radio.
+            W.port_combo.append(previous, previous + " (unavailable)")
+            W.port_combo.set_active_id(previous)
+        } else W.port_entry.set_text(previous)
+    } else if (devices.len()) W.port_combo.set_active(0)
+    else W.port_entry.set_text("")
+    if (report) set_status(devices.len() ? "Select a device and baud rate, then connect" : "No serial devices found. Attach an adapter and refresh.")
+    update_connection_controls()
 }
 
 function append_terminal(text) {
@@ -460,20 +530,22 @@ function draw_rssi_graph(area, cr, w, h) {
         cr.select_font_face("Sans", 0, 1)
         cr.set_font_size(14)
         cr.move_to(left + 18, top + 34)
-        cr.show_text("Waiting for RSSI/TDM reports")
+        cr.show_text(w < 420 ? "Waiting for reports" : "Waiting for RSSI/TDM reports")
     }
 
     cr.select_font_face("Sans", 0, 0)
     cr.set_font_size(11)
     draw_graph_legend(cr, left + 8, top + 16, "L RSSI", 0.08, 0.37, 0.80, graph_metric_visible("local_rssi"))
     draw_graph_legend(cr, left + 92, top + 16, "R RSSI", 0.03, 0.58, 0.43, graph_metric_visible("remote_rssi"))
-    draw_graph_legend(cr, left + 176, top + 16, "L noise", 0.84, 0.36, 0.13, graph_metric_visible("local_noise"))
-    draw_graph_legend(cr, left + 270, top + 16, "R noise", 0.55, 0.24, 0.70, graph_metric_visible("remote_noise"))
+    local narrow = plot_w < 370
+    draw_graph_legend(cr, left + (narrow ? 8 : 176), top + (narrow ? 32 : 16), "L noise", 0.84, 0.36, 0.13, graph_metric_visible("local_noise"))
+    draw_graph_legend(cr, left + (narrow ? 100 : 270), top + (narrow ? 32 : 16), "R noise", 0.55, 0.24, 0.70, graph_metric_visible("remote_noise"))
 }
 
 function run_task(task) {
-    task.catch(function(e) {
-        show_error(e)
+    if (State.busy || State.window_closing) return
+    task().catch(function(e) {
+        if (!State.window_closing) show_error(e)
     })
 }
 
@@ -492,6 +564,10 @@ function has_unsaved(scope) {
 function set_unsaved(scope, value) {
     if (scope == "remote") State.unsaved_remote = value
     else State.unsaved_local = value
+}
+
+function write_all_enabled() {
+    return ("apply_all_settings" in W) && W.apply_all_settings.get_active()
 }
 
 function firmware_for(scope) {
@@ -531,6 +607,24 @@ function parameter_supported(p) {
 function support_text(p) {
     if (p == null) return "not loaded"
     return parameter_supported(p) ? "reported" : "not reported"
+}
+
+function collect_apply_values(scope, include_unchanged = false) {
+    local out = {}
+    if (!include_unchanged) {
+        local dirty = get_dirty(scope)
+        foreach (key, value in dirty) out[key] <- value
+        return out
+    }
+
+    local params = get_params(scope)
+    if (params == null) return out
+    foreach (key in Model.sorted_keys(params)) {
+        local p = params[key]
+        if (!parameter_supported(p) || p.readonly || p.value == null) continue
+        out[key] <- p.value
+    }
+    return out
 }
 
 function supported_count(params) {
@@ -602,11 +696,42 @@ function row_label(text, width = 12) {
     return l
 }
 
+function remember_param_control(scope, key, widget, kind) {
+    if ("param_entries" in W && scope in W.param_entries) {
+        W.param_entries[scope][key] <- { widget = widget, kind = kind }
+    }
+}
+
+function make_param_dropdown(scope, key, p) {
+    local combo = Gtk.ComboBoxText.new()
+    combo.set_size_request(160, -1)
+    foreach (c in p.choices) {
+        combo.append(c.value.tostring(), c.label)
+    }
+
+    if (p.value != null) combo.set_active_id(p.value.tostring())
+    local supported = parameter_supported(p)
+    combo.set_sensitive(supported && !p.readonly)
+    combo.set_tooltip_text(scope_label(scope) + " " + key + ": " + support_text(p))
+    combo.connect("changed", function() {
+        if (State.busy) return
+        local active_id = combo.get_active_id()
+        if (active_id != null) stage_value(scope, key, active_id)
+    })
+    remember_param_control(scope, key, combo, "choice")
+    return combo
+}
+
 function make_param_entry(scope, key) {
     local params = get_params(scope)
     local p = params != null && key in params ? params[key] : null
+    if (p != null && p.choices != null && (key == "S2" || key == "S20")) {
+        return make_param_dropdown(scope, key, p)
+    }
+
     local e = Gtk.Entry.new()
     e.set_width_chars(8)
+    e.set_max_width_chars(8)
     e.set_text(value_text(p))
     local supported = parameter_supported(p)
     e.set_sensitive(supported && !p.readonly)
@@ -620,9 +745,7 @@ function make_param_entry(scope, key) {
         if (State.busy) return
         stage_value(scope, key, e.get_text())
     })
-    if ("param_entries" in W && scope in W.param_entries) {
-        W.param_entries[scope][key] <- e
-    }
+    remember_param_control(scope, key, e, "entry")
     return e
 }
 
@@ -632,18 +755,6 @@ function rebuild_parameter_list() {
     W.param_entries["local"] <- {}
     W.param_entries["remote"] <- {}
     clear_children(W.param_list)
-
-    local header = hbox(8)
-    header.append(row_label("Reg", 6))
-    header.append(row_label("Name", 24))
-    header.append(row_label("Local", 9))
-    header.append(row_label("Remote", 9))
-    header.append(row_label("Range / choices", 34))
-    header.append(row_label("Notes", 36))
-    local header_row = Gtk.ListBoxRow.new()
-    header_row.set_selectable(false)
-    header_row.set_child(margins(header, 4))
-    W.param_list.append(header_row)
 
     local filter = "filter_entry" in W ? U.trim(W.filter_entry.get_text()).tolower() : ""
     local supported_only = ("supported_only" in W) && W.supported_only.get_active()
@@ -657,15 +768,20 @@ function rebuild_parameter_list() {
         local hay = (key + " " + base_param.name + " " + base_param.category + " " + base_param.description).tolower()
         if (filter != "" && hay.find(filter) == null) continue
 
-        local row_box = hbox(8)
-        row_box.append(row_label(key, 6))
-        local name = row_label(base_param.name, 24)
+        local row_box = vbox(4)
+        local name = value_label(key + "  " + base_param.name)
         name.set_tooltip_text(base_param.description)
         row_box.append(name)
-        row_box.append(make_param_entry("local", key))
-        row_box.append(make_param_entry("remote", key))
+        local values = flowbox()
+        foreach (scope in ["local", "remote"]) {
+            local field = hbox(6)
+            field.append(label(scope_label(scope)))
+            field.append(make_param_entry(scope, key))
+            values.append(field)
+        }
+        row_box.append(values)
         local rt = range_text(base_param)
-        local rlabel = row_label(rt, 34)
+        local rlabel = value_label(rt)
         rlabel.set_tooltip_text(rt)
         row_box.append(rlabel)
 
@@ -679,7 +795,7 @@ function rebuild_parameter_list() {
         if (rp != null && rp.dirty) notes.append("remote dirty")
         if (lp != null && lp.error != "") notes.append(lp.error)
         if (rp != null && rp.error != "") notes.append(rp.error)
-        local nlabel = row_label(U.join(notes, ", "), 36)
+        local nlabel = value_label(U.join(notes, ", "))
         nlabel.set_tooltip_text(base_param.description)
         row_box.append(nlabel)
 
@@ -696,8 +812,15 @@ function automated_edit_param(scope, key, value) {
         throw "parameter entry not found: " + scope + " " + key
     }
 
-    local e = W.param_entries[scope][key]
+    local control = W.param_entries[scope][key]
+    local e = control.widget
     e.grab_focus()
+    if (control.kind == "choice") {
+        local id = value.tostring()
+        if (!e.set_active_id(id)) throw "choice value not found: " + scope + " " + key + "=" + id
+        stage_value(scope, key, id)
+        return
+    }
     e.set_text("")
     local text = value.tostring()
     for (local i = 0; i < text.len(); i++) {
@@ -739,7 +862,7 @@ function rebuild_overview() {
         }
     }
     lines.append("")
-    lines.append("Port: " + ("serial" in State && State.serial != null ? State.serial.path : W.port_entry.get_text()))
+    lines.append("Port: " + (State.serial != null && State.serial.is_open() ? State.serial.path : selected_device_path()))
     lines.append("Baud: " + W.baud_entry.get_text())
     lines.append("Local reported settings: " + supported_count(State.local_params) + " / " +
         (State.local_params == null ? 0 : State.local_params.len()))
@@ -753,19 +876,21 @@ function rebuild_overview() {
 }
 
 function quick_entry(scope, key) {
-    local box = hbox(6)
+    local box = vbox(4)
     local params = get_params(scope)
     local p = params != null && key in params ? params[key] : null
-    box.append(row_label(key + " " + (p == null ? "" : p.name), 24))
+    box.append(value_label(key + " " + (p == null ? "" : p.name)))
+    local fields = flowbox()
     local e = make_param_entry(scope, key)
-    box.append(e)
+    fields.append(e)
     local note_text = p == null ? "" : range_text(p)
     if (p != null && !parameter_supported(p)) {
         note_text = note_text == "" ? "not reported" : note_text + " (not reported)"
     }
-    local note = label(note_text, 0.0)
+    local note = value_label(note_text)
     note.set_hexpand(true)
-    box.append(note)
+    fields.append(note)
+    box.append(fields)
     return box
 }
 
@@ -786,11 +911,12 @@ function rebuild_quick_pages() {
         W.security_box.append(quick_entry(scope, "S15"))
     }
 
-    local key_row = hbox(6)
+    local key_row = vbox(6)
     key_row.append(row_label("AES key", 12))
     remember("key_entry", Gtk.Entry.new())
     W.key_entry.set_visibility(true)
     W.key_entry.set_hexpand(true)
+    W.key_entry.set_width_chars(12)
     W.key_entry.set_placeholder_text("32 hex chars for 128-bit, 64 hex chars for 256-bit")
     key_row.append(W.key_entry)
     local random_128_btn = text_button("media-playlist-shuffle-symbolic", "Random 128", "Generate a random 128-bit AES key")
@@ -798,30 +924,32 @@ function rebuild_quick_pages() {
         W.key_entry.set_text(U.secure_random_hex(16))
         set_status("Generated random 128-bit AES key")
     })
-    key_row.append(random_128_btn)
+    local random_buttons = flowbox()
+    random_buttons.append(random_128_btn)
     local random_256_btn = text_button("media-playlist-shuffle-symbolic", "Random 256", "Generate a random 256-bit AES key")
     random_256_btn.connect("clicked", function() {
         W.key_entry.set_text(U.secure_random_hex(32))
         set_status("Generated random 256-bit AES key")
     })
-    key_row.append(random_256_btn)
+    random_buttons.append(random_256_btn)
+    key_row.append(random_buttons)
     W.security_box.append(key_row)
 
-    local action_row = hbox(6)
+    local action_row = flowbox()
     action_row.append(row_label("AES target", 12))
     local local_key_btn = text_button("dialog-password-symbolic", "Set Local", "Write encryption key to local modem")
     local_key_btn.connect("clicked", function() {
-        run_task(set_encryption_key("local"))
+        run_task(function() { return set_encryption_key("local") })
     })
     action_row.append(local_key_btn)
     local remote_key_btn = text_button("dialog-password-symbolic", "Set Remote", "Write encryption key to remote modem")
     remote_key_btn.connect("clicked", function() {
-        run_task(set_encryption_key("remote"))
+        run_task(function() { return set_encryption_key("remote") })
     })
     action_row.append(remote_key_btn)
     local both_key_btn = text_button("object-select-symbolic", "Set Both", "Write the same AES key to remote and local modems")
     both_key_btn.connect("clicked", function() {
-        run_task(set_encryption_key_both())
+        run_task(function() { return set_encryption_key_both() })
     })
     action_row.append(both_key_btn)
     W.security_box.append(action_row)
@@ -830,15 +958,16 @@ function rebuild_quick_pages() {
 function rebuild_apply_preview() {
     if (!("apply_buffer" in W)) return
     local lines = []
+    local include_unchanged = write_all_enabled()
     foreach (scope in ["remote", "local"]) {
-        local dirty = get_dirty(scope)
-        if (dirty.len() == 0 && !has_unsaved(scope)) continue
-        lines.append(scope_label(scope) + " staged commands:")
+        local values = collect_apply_values(scope, include_unchanged)
+        if (values.len() == 0 && !has_unsaved(scope)) continue
+        lines.append(scope_label(scope) + (include_unchanged ? " loaded settings for Apply:" : " staged commands:"))
         local params = get_params(scope)
-        foreach (key in Model.sorted_keys(dirty)) {
+        foreach (key in Model.sorted_keys(values)) {
             if (params != null && key in params) {
                 local p = params[key]
-                lines.append("  " + SessionMod.at_command(scope, p.reg + p.num + "=" + dirty[key]))
+                lines.append("  " + SessionMod.at_command(scope, p.reg + p.num + "=" + values[key]))
                 if (p.match) lines.append("    warning: must match the other radio")
                 if (p.high_risk) lines.append("    warning: radio-critical or region-sensitive")
                 if (p.error != "") lines.append("    note: " + p.error)
@@ -847,10 +976,12 @@ function rebuild_apply_preview() {
         if (has_unsaved(scope)) {
             lines.append("  # applied changes are not saved to EEPROM yet")
         }
-        lines.append("  " + SessionMod.at_command(scope, "&W") + "    # only when Save is selected")
+        if (!include_unchanged) {
+            lines.append("  " + SessionMod.at_command(scope, "&W") + "    # only when Save is selected")
+        }
         lines.append("")
     }
-    if (lines.len() == 0) lines.append("No staged changes.")
+    if (lines.len() == 0) lines.append(include_unchanged ? "No loaded writable settings." : "No staged changes.")
     W.apply_buffer.set_text(U.join(lines, "\n"), -1)
     rebuild_overview()
 }
@@ -883,8 +1014,30 @@ async function connect_port() {
         State.unsaved_local = false
         State.unsaved_remote = false
         set_busy(false, "Disconnected")
+        refresh_devices(null, false)
         return
     }
+    local baud_text = U.trim(W.baud_entry.get_text())
+    if (baud_text == "") throw "Enter a baud rate"
+    foreach (ch in baud_text) if (ch < 48 || ch > 57) throw "Baud rate must be a positive integer"
+    local baud = baud_text.tointeger()
+    if (baud <= 0 || baud > 4000000) throw "Baud rate must be between 1 and 4000000"
+    if (State.devices == null) State.devices = DevicesMod.Devices()
+    local path = selected_device_path()
+    local discovered = W.port_combo.get_active_id() != null
+    State.permission_pending = true
+    set_busy(true, "Checking device access; allow USB permission if prompted")
+    try {
+        path = await State.devices.resolve(path, discovered)
+    } catch (e) {
+        State.permission_pending = false
+        set_busy(false)
+        throw e
+    }
+    State.permission_pending = false
+    if (State.window_closing) return
+    if (path == null) { set_busy(false, "Connection cancelled"); return }
+    if (discovered || path.find("usb://") == 0) refresh_devices(path, false)
     set_busy(true, "Opening serial port")
     clear_graph_samples()
     State.serial = SerialMod.SerialPort()
@@ -894,18 +1047,20 @@ async function connect_port() {
     State.serial.set_data_callback(function(data) {
         consume_graph_rx(data)
     })
-    local baud = U.trim(W.baud_entry.get_text()).tointeger()
-    if (!State.serial.open(U.trim(W.port_entry.get_text()), baud)) {
-        State.serial.close()
-        await SerialMod.drain_retired_ports()
-        State.serial = null
-        set_busy(false)
-        throw "failed to open serial port"
-    }
-    State.session = SessionMod.RfdSession(State.serial)
-    State.unsaved_local = false
-    State.unsaved_remote = false
+    State.serial.set_state_callback(function(connected) {
+        if (State.window_closing) return
+        if (!connected) {
+            if (State.session != null) State.session.in_command_mode = false
+            State.session = null
+            set_status("Disconnected")
+        }
+        update_connection_controls()
+    })
     try {
+        State.serial.open(path, baud)
+        State.session = SessionMod.RfdSession(State.serial)
+        State.unsaved_local = false
+        State.unsaved_remote = false
         await State.session.enter_command_mode()
     } catch (e) {
         State.serial.close()
@@ -926,26 +1081,27 @@ async function load_scope(scope) {
     set_busy(false, "Loaded " + scope_label(scope))
 }
 
-async function apply_scope(scope, do_save = false, do_reboot = false) {
+async function apply_scope(scope, do_save = false, do_reboot = false, include_unchanged = false) {
     if (State.session == null) throw "not connected"
+    local values = collect_apply_values(scope, include_unchanged)
     local dirty = get_dirty(scope)
-    local dirty_count = dirty.len()
-    local needs_save = do_save && (dirty_count > 0 || has_unsaved(scope))
-    local needs_reboot = do_reboot && (dirty_count > 0 || has_unsaved(scope))
-    if (dirty_count == 0 && !needs_save && !needs_reboot) {
-        set_status("No " + scope_label(scope) + " changes to apply")
+    local write_count = values.len()
+    local needs_save = do_save && (write_count > 0 || has_unsaved(scope))
+    local needs_reboot = do_reboot && (write_count > 0 || has_unsaved(scope))
+    if (write_count == 0 && !needs_save && !needs_reboot) {
+        set_status("No " + scope_label(scope) + (include_unchanged ? " loaded settings to apply" : " changes to apply"))
         return
     }
-    set_busy(true, "Applying " + scope_label(scope))
+    set_busy(true, include_unchanged ? "Applying all " + scope_label(scope) + " settings" : "Applying " + scope_label(scope))
     local params = get_params(scope)
-    foreach (key in Model.sorted_keys(dirty)) {
+    foreach (key in Model.sorted_keys(values)) {
         local p = params[key]
-        await State.session.set_register(scope, p, dirty[key])
-        p.original = dirty[key]
-        p.value = dirty[key]
+        await State.session.set_register(scope, p, values[key])
+        p.original = values[key]
+        p.value = values[key]
         p.dirty = false
     }
-    if (dirty_count > 0 && !do_save) set_unsaved(scope, true)
+    if (write_count > 0 && !do_save) set_unsaved(scope, true)
     if (needs_save) {
         set_busy(true, "Saving " + scope_label(scope))
         await State.session.save(scope)
@@ -967,15 +1123,17 @@ async function apply_scope(scope, do_save = false, do_reboot = false) {
     set_busy(false, "Applied " + scope_label(scope))
 }
 
-async function apply_both(do_save = false, do_reboot = false) {
-    local remote_needed = State.dirty_remote.len() > 0 || (do_save && State.unsaved_remote) || (do_reboot && State.unsaved_remote)
-    local local_needed = State.dirty_local.len() > 0 || (do_save && State.unsaved_local) || (do_reboot && State.unsaved_local)
+async function apply_both(do_save = false, do_reboot = false, include_unchanged = false) {
+    local remote_values = collect_apply_values("remote", include_unchanged)
+    local local_values = collect_apply_values("local", include_unchanged)
+    local remote_needed = remote_values.len() > 0 || (do_save && State.unsaved_remote) || (do_reboot && State.unsaved_remote)
+    local local_needed = local_values.len() > 0 || (do_save && State.unsaved_local) || (do_reboot && State.unsaved_local)
     if (!remote_needed && !local_needed) {
-        set_busy(false, "No changes to apply")
+        set_busy(false, include_unchanged ? "No loaded settings to apply" : "No changes to apply")
         return
     }
-    if (remote_needed) await apply_scope("remote", do_save, do_reboot)
-    if (local_needed) await apply_scope("local", do_save, do_reboot)
+    if (remote_needed) await apply_scope("remote", do_save, do_reboot, include_unchanged)
+    if (local_needed) await apply_scope("local", do_save, do_reboot, include_unchanged)
     set_busy(false, "Apply complete")
 }
 
@@ -1119,6 +1277,8 @@ function make_textview(monospaced = true) {
     view.set_wrap_mode(Gtk.WrapMode.word_char)
     view.set_monospace(monospaced)
     local scroll = Gtk.ScrolledWindow.new()
+    scroll.set_policy(Gtk.PolicyType.never, Gtk.PolicyType.automatic)
+    scroll.set_min_content_height(120)
     scroll.set_child(view)
     scroll.set_vexpand(true)
     scroll.set_hexpand(true)
@@ -1126,41 +1286,67 @@ function make_textview(monospaced = true) {
 }
 
 function build_header(root) {
-    local bar = hbox(6)
-    margins(bar, 6)
+    local header = margins(vbox(6), 6)
+    local device_row = hbox(6)
 
-    remember("port_entry", Gtk.Entry.new())
-    W.port_entry.set_text("/dev/ttyUSB0")
+    remember("port_combo", Gtk.ComboBoxText.new_with_entry())
+    remember("port_entry", W.port_combo.get_child())
+    W.port_entry.set_placeholder_text("Select a device or enter a path")
     W.port_entry.set_width_chars(18)
-    W.port_entry.set_tooltip_text("Serial device")
-    bar.append(W.port_entry)
+    W.port_entry.set_max_width_chars(18)
+    W.port_entry.set_tooltip_text("Serial device path or Android USB URI")
+    W.port_combo.set_hexpand(true)
+    device_row.append(W.port_combo)
+    remember("scan_btn", icon_button("view-refresh-symbolic", "Refresh serial devices"))
+    W.scan_btn.connect("clicked", function() {
+        try { refresh_devices() } catch (e) { show_error(e) }
+    })
+    device_row.append(W.scan_btn)
+    header.append(device_row)
 
+    local bar = flowbox()
+    local baud_field = hbox(6)
+    baud_field.append(label("Baud"))
     remember("baud_entry", Gtk.Entry.new())
     W.baud_entry.set_text("57600")
     W.baud_entry.set_width_chars(8)
+    W.baud_entry.set_max_width_chars(8)
     W.baud_entry.set_tooltip_text("Serial baud")
-    bar.append(W.baud_entry)
+    baud_field.append(W.baud_entry)
+    bar.append(baud_field)
 
-    remember("connect_btn", text_button("network-wired-symbolic", "Connect", "Open serial port and enter command mode"))
-    W.connect_btn.connect("clicked", function() { run_task(connect_port()) })
+    remember("connect_btn", Gtk.Button.new_with_label("Connect"))
+    W.connect_btn.connect("clicked", function() {
+        if (State.permission_pending) {
+            State.devices.cancel()
+            State.permission_pending = false
+            update_connection_controls()
+        } else run_task(function() { return connect_port() })
+    })
     bar.append(W.connect_btn)
 
     local local_load = icon_button("view-refresh-symbolic", "Refresh local modem")
-    local_load.connect("clicked", function() { run_task(load_scope("local")) })
+    remember("local_load", local_load)
+    local_load.connect("clicked", function() { run_task(function() { return load_scope("local") }) })
     bar.append(local_load)
 
     local remote_load = icon_button("emblem-synchronizing-symbolic", "Refresh remote modem")
-    remote_load.connect("clicked", function() { run_task(load_scope("remote")) })
+    remember("remote_load", remote_load)
+    remote_load.connect("clicked", function() { run_task(function() { return load_scope("remote") }) })
     bar.append(remote_load)
 
     remember("spinner", Gtk.Spinner.new())
     bar.append(W.spinner)
+    header.append(bar)
 
     remember("status", label("Disconnected", 0.0))
     W.status.set_hexpand(true)
-    bar.append(W.status)
+    W.status.set_wrap(true)
+    W.status.set_wrap_mode(Pango.WrapMode.word_char)
+    W.status.set_max_width_chars(60)
+    header.append(W.status)
 
-    root.append(bar)
+    root.append(header)
 }
 
 function build_overview_page(nb) {
@@ -1169,13 +1355,13 @@ function build_overview_page(nb) {
     local tv = make_textview(true)
     remember("overview_buffer", tv.buffer)
     page.append(tv.scroll)
-    nb.append_page(page, Gtk.Label.new("Overview"))
+    add_page(nb, page, "Overview")
 }
 
 function build_parameters_page(nb) {
     local page = vbox(6)
     margins(page, 8)
-    local top = hbox(6)
+    local top = flowbox()
     remember("filter_entry", Gtk.Entry.new())
     W.filter_entry.set_placeholder_text("Filter register, name, category")
     W.filter_entry.set_hexpand(true)
@@ -1193,6 +1379,7 @@ function build_parameters_page(nb) {
     remember("param_list", Gtk.ListBox.new())
     W.param_list.set_selection_mode(Gtk.SelectionMode.none)
     local scroll = Gtk.ScrolledWindow.new()
+    scroll.set_policy(Gtk.PolicyType.never, Gtk.PolicyType.automatic)
     scroll.set_child(W.param_list)
     scroll.set_vexpand(true)
     page.append(scroll)
@@ -1204,6 +1391,7 @@ function build_quick_page(nb, title, slot_name) {
     margins(page, 8)
     remember(slot_name, vbox(4))
     local scroll = Gtk.ScrolledWindow.new()
+    scroll.set_policy(Gtk.PolicyType.never, Gtk.PolicyType.automatic)
     scroll.set_child(W[slot_name])
     scroll.set_vexpand(true)
     page.append(scroll)
@@ -1213,7 +1401,7 @@ function build_quick_page(nb, title, slot_name) {
 function build_gpio_page(nb) {
     local page = vbox(6)
     margins(page, 8)
-    local controls = hbox(6)
+    local controls = flowbox()
     remember("gpio_remote", Gtk.CheckButton.new_with_label("Remote"))
     controls.append(W.gpio_remote)
     remember("gpio_pin", Gtk.Entry.new())
@@ -1234,19 +1422,19 @@ function build_gpio_page(nb) {
     ]) {
         local command_name = spec.name
         local b = text_button(spec.icon, spec.label, "Run GPIO " + command_name)
-        b.connect("clicked", function(name = command_name) { run_task(run_gpio(name)) })
+        b.connect("clicked", function(name = command_name) { run_task(function() { return run_gpio(name) }) })
         controls.append(b)
     }
     page.append(controls)
     local tv = make_textview(true)
     page.append(tv.scroll)
-    nb.append_page(page, Gtk.Label.new("GPIO"))
+    add_page(nb, page, "GPIO")
 }
 
 function build_diagnostics_page(nb) {
     local page = vbox(6)
     margins(page, 8)
-    local controls = hbox(6)
+    local controls = flowbox()
     remember("diag_remote", Gtk.CheckButton.new_with_label("Remote"))
     controls.append(W.diag_remote)
     foreach (spec in [
@@ -1260,13 +1448,13 @@ function build_diagnostics_page(nb) {
         local b = text_button(spec.icon, spec.label, "Run " + diag_mode)
         b.connect("clicked", function(mode = diag_mode) {
             local scope = W.diag_remote.get_active() ? "remote" : "local"
-            run_task(run_diag(scope, mode))
+            run_task(function() { return run_diag(scope, mode) })
         })
         controls.append(b)
     }
     page.append(controls)
 
-    local graph_controls = hbox(6)
+    local graph_controls = flowbox()
     remember("graph_local_rssi", Gtk.CheckButton.new_with_label("L RSSI"))
     W.graph_local_rssi.set_active(true)
     W.graph_local_rssi.connect("toggled", function() { queue_graph_draw() })
@@ -1286,13 +1474,13 @@ function build_diagnostics_page(nb) {
     local clear = icon_button("edit-clear-symbolic", "Clear graph samples")
     clear.connect("clicked", function() { clear_graph_samples() })
     graph_controls.append(clear)
-    remember("rssi_graph_status", label("No link samples", 0.0))
+    remember("rssi_graph_status", value_label("No link samples"))
     W.rssi_graph_status.set_hexpand(true)
-    graph_controls.append(W.rssi_graph_status)
     page.append(graph_controls)
+    page.append(W.rssi_graph_status)
 
     remember("rssi_graph_area", Gtk.DrawingArea.new())
-    W.rssi_graph_area.set_size_request(900, 300)
+    W.rssi_graph_area.set_size_request(280, 240)
     W.rssi_graph_area.set_hexpand(true)
     W.rssi_graph_area.set_vexpand(true)
     W.rssi_graph_area.set_draw_func(draw_rssi_graph, null, function(_) {})
@@ -1303,7 +1491,7 @@ function build_diagnostics_page(nb) {
         queue_graph_draw()
         return true
     })
-    nb.append_page(page, Gtk.Label.new("Diagnostics"))
+    add_page(nb, page, "Diagnostics")
 }
 
 function build_terminal_page(nb) {
@@ -1317,22 +1505,23 @@ function build_terminal_page(nb) {
     remember("terminal_entry", Gtk.Entry.new())
     W.terminal_entry.set_placeholder_text("AT command")
     W.terminal_entry.set_hexpand(true)
-    W.terminal_entry.connect("activate", function() { run_task(terminal_send()) })
+    W.terminal_entry.set_width_chars(10)
+    W.terminal_entry.connect("activate", function() { run_task(function() { return terminal_send() }) })
     input.append(W.terminal_entry)
     local send = icon_button("mail-send-symbolic", "Send command")
-    send.connect("clicked", function() { run_task(terminal_send()) })
+    send.connect("clicked", function() { run_task(function() { return terminal_send() }) })
     input.append(send)
     local clear = icon_button("edit-clear-symbolic", "Clear terminal")
     clear.connect("clicked", function() { W.terminal_buffer.set_text("", -1) })
     input.append(clear)
     page.append(input)
-    nb.append_page(page, Gtk.Label.new("Terminal"))
+    add_page(nb, page, "Terminal")
 }
 
 function build_apply_page(nb) {
     local page = vbox(6)
     margins(page, 8)
-    local actions = hbox(6)
+    local actions = flowbox()
     foreach (spec in [
         { label = "Apply Remote", icon = "go-up-symbolic", scope = "remote", save = false, reboot = false },
         { label = "Apply Local", icon = "go-down-symbolic", scope = "local", save = false, reboot = false },
@@ -1344,8 +1533,9 @@ function build_apply_page(nb) {
         local apply_save = spec.save
         local apply_reboot = spec.reboot
         b.connect("clicked", function(scope = apply_scope_name, save = apply_save, reboot = apply_reboot) {
-            if (scope == "both") run_task(apply_both(save, reboot))
-            else run_task(apply_scope(scope, save, reboot))
+            local include_unchanged = !save && !reboot && write_all_enabled()
+            if (scope == "both") run_task(function() { return apply_both(save, reboot, include_unchanged) })
+            else run_task(function() { return apply_scope(scope, save, reboot, include_unchanged) })
         })
         actions.append(b)
     }
@@ -1354,7 +1544,12 @@ function build_apply_page(nb) {
     actions.append(revert)
     page.append(actions)
 
-    local profile_row = hbox(6)
+    remember("apply_all_settings", Gtk.CheckButton.new_with_label("Write all loaded settings"))
+    W.apply_all_settings.set_tooltip_text("Make Apply Local and Apply Remote write every reported writable setting, including unchanged values")
+    W.apply_all_settings.connect("toggled", function() { rebuild_apply_preview() })
+    page.append(W.apply_all_settings)
+
+    local profile_row = vbox(6)
     remember("profile_entry", Gtk.Entry.new())
     W.profile_entry.set_text(State.default_profile)
     W.profile_entry.set_hexpand(true)
@@ -1363,27 +1558,29 @@ function build_apply_page(nb) {
     export_btn.connect("clicked", function() {
         try { export_profile() } catch (e) { show_error(e) }
     })
-    profile_row.append(export_btn)
+    local profile_buttons = flowbox()
+    profile_buttons.append(export_btn)
     local import_btn = text_button("document-open-symbolic", "Import", "Import JSON profile and stage values")
     import_btn.connect("clicked", function() {
         try { import_profile() } catch (e) { show_error(e) }
     })
-    profile_row.append(import_btn)
+    profile_buttons.append(import_btn)
+    profile_row.append(profile_buttons)
     page.append(profile_row)
 
-    local reset_row = hbox(6)
+    local reset_row = flowbox()
     local reset_local = text_button("edit-delete-symbolic", "Factory Local", "Factory-reset local modem")
-    reset_local.connect("clicked", function() { run_task(factory_reset("local")) })
+    reset_local.connect("clicked", function() { run_task(function() { return factory_reset("local") }) })
     reset_row.append(reset_local)
     local reset_remote = text_button("edit-delete-symbolic", "Factory Remote", "Factory-reset remote modem")
-    reset_remote.connect("clicked", function() { run_task(factory_reset("remote")) })
+    reset_remote.connect("clicked", function() { run_task(function() { return factory_reset("remote") }) })
     reset_row.append(reset_remote)
     page.append(reset_row)
 
     local tv = make_textview(true)
     remember("apply_buffer", tv.buffer)
     page.append(tv.scroll)
-    nb.append_page(page, Gtk.Label.new("Apply"))
+    add_page(nb, page, "Apply")
 }
 
 function create_app(options = null) {
@@ -1396,17 +1593,24 @@ function create_app(options = null) {
     if (desktop_path != null && maybe_relaunch_from_desktop(desktop_path)) return null
 
     local app = Gtk.Application.new(app_id, Gio.ApplicationFlags.flags_none)
+    app.connect("shutdown", function() {
+        State.window_closing = true
+        if (State.devices != null) State.devices.cancel()
+        if (State.serial != null) State.serial.close()
+    })
     app.connect("activate", function() {
         register_app_icon()
 
         local win = Gtk.ApplicationWindow.new(app)
         win.set_title(APP_NAME)
         win.set_icon_name(APP_ICON_NAME)
-        win.set_default_size(1180, 760)
+        win.set_default_size(options != null && "width" in options ? options.width : 1000,
+            options != null && "height" in options ? options.height : 760)
         remember("win", win)
         win.connect("close-request", function() {
             if (State.window_closing) return false
             State.window_closing = true
+            if (State.devices != null) State.devices.cancel()
             sqgi.timeout_add(0, function() {
                 async function cleanup_and_quit() {
                     if (State.serial != null) {
@@ -1427,10 +1631,15 @@ function create_app(options = null) {
         })
 
         local root = vbox(0)
-        win.set_child(root)
+        local viewport = Gtk.ScrolledWindow.new()
+        viewport.set_policy(Gtk.PolicyType.never, Gtk.PolicyType.automatic)
+        viewport.set_child(root)
+        win.set_child(viewport)
         build_header(root)
 
         local nb = Gtk.Notebook.new()
+        remember("notebook", nb)
+        nb.set_scrollable(true)
         nb.set_hexpand(true)
         nb.set_vexpand(true)
         root.append(nb)
@@ -1450,10 +1659,15 @@ function create_app(options = null) {
         rebuild_overview()
 
         win.present()
+        try { refresh_devices() } catch (e) { show_error(e) }
+        if (options != null && "on_ready" in options) options.on_ready(W)
 
         if (options != null && ("auto_refresh_local" in options) && options.auto_refresh_local) {
             sqgi.timeout_add(100, function() {
-                if ("device" in options) W.port_entry.set_text(options.device)
+                if ("device" in options) {
+                    W.port_combo.set_active(-1)
+                    W.port_entry.set_text(options.device)
+                }
                 if ("baud" in options) W.baud_entry.set_text(options.baud.tostring())
                 async function drive() {
                     try {
@@ -1483,7 +1697,7 @@ function create_app(options = null) {
                     await sqgi.sleep(300)
                     if ("win" in W) W.win.close()
                 }
-                run_task(drive())
+                run_task(function() { return drive() })
                 return false
             })
         }

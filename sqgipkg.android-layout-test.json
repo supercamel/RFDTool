@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "name": "RFDTool Layout Test",
+  "app_id": "com.github.supercamel.rfdtool.layouttest",
+  "icon": "images/com.github.supercamel.rfdtool.png",
+  "script": "test-layout.nut",
+  "compile_scripts": false,
+  "features": [
+    "gtk4"
+  ],
+  "files": [
+    "images/com.github.supercamel.rfdtool.png=usr/share/sqgi/app/images/com.github.supercamel.rfdtool.png"
+  ],
+  "platforms": {
+    "android": {
+      "architectures": [
+        "x86_64"
+      ],
+      "sdk": "noble-android-r4",
+      "min_sdk": 31,
+      "version_code": 25,
+      "version_name": "0.0.25-alpha",
+      "variant": "debug",
+      "namespaces": [
+        "Gtk-4.0",
+        "GSerial-1.0"
+      ]
+    }
+  },
+  "native": [
+    {
+      "name": "gserial",
+      "repo": "https://github.com/supercamel/gserial.git",
+      "ref": "d9bfcbcd59b43ba9bdbdc055fc928261efdb3562",
+      "dir": ".sqgipkg/native/gserial-android",
+      "build_system": "meson",
+      "options": {
+        "android_test_backend": false
+      },
+      "gi": {
+        "strategy": "target",
+        "namespace": "GSerial",
+        "version": "1.0",
+        "library": "gserial-1.0"
+      }
+    }
+  ]
+}

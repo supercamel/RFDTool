@@ -18,6 +18,7 @@ function print_help() {
     print("RFDTool\n")
     print("  sqgi main.nut                 launch GTK4 utility\n")
     print("  sqgi main.nut --self-test     run parser/session tests\n")
+    print("  sqgi main.nut --list-devices  list available serial devices\n")
     print("  sqgi main.nut --probe         read local ATI/ATI5 from the modem\n")
     print("  sqgi main.nut --refresh-local exercise the same read path as the GTK refresh button\n")
     print("  sqgi main.nut --gtk-refresh-local-test run Connect + Refresh Local in the GTK window\n")
@@ -35,7 +36,14 @@ if (has_arg("--help") || has_arg("-h")) {
 if (has_arg("--self-test")) {
     import("test/parser_tests.nut")
     import("test/session_tests.nut")
+    import("test/serial_tests.nut")
     print("[OK] all self-tests passed\n")
+    return 0
+}
+
+if (has_arg("--list-devices")) {
+    local DevicesMod = import("src/serial/devices.nut")
+    foreach (device in DevicesMod.Devices().list()) print(device.label + "\n")
     return 0
 }
 

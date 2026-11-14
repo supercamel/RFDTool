@@ -30,9 +30,11 @@ class SerialPort {
     on_state = null
     closing = false
     generation = 0
+    factory = null
 
-    constructor() {
+    constructor(native_factory = null) {
         log = []
+        factory = native_factory == null ? function() { return GSerial.Port.new() } : native_factory
     }
 
     function set_log_callback(cb) {
@@ -71,17 +73,19 @@ class SerialPort {
         closing = false
         generation++
         local token = generation
-        port = GSerial.Port.new()
+        port = factory()
         port.set_baud(baud)
         port.set_timeout(100)
 
-        if (!port.open(path)) {
-            append_log("error", "failed to open " + path)
+        try {
+            if (!port.open_full(path)) throw "failed to open " + path
+        } catch (e) {
+            append_log("error", e.tostring())
             retire_native_port(port)
             port = null
             connected = false
             emit_state()
-            return false
+            throw e
         }
         connected = true
         append_log("status", "connected " + path + " @" + baud)
@@ -94,11 +98,19 @@ class SerialPort {
         local self = this
         sqgi.timeout_add(20, function() {
             if (self.closing || token != self.generation) return false
-            if (self.port == null || !self.port.is_open()) return false
+            if (self.port == null) return false
+            if (!self.port.is_open()) { self.connection_lost(); return false }
             local available = self.port.bytes_available()
+            if (!self.port.is_open()) { self.connection_lost(); return false }
             if (available > 0) self.handle_data(available)
             return true
         })
+    }
+
+    function connection_lost() {
+        if (!connected) return
+        append_log("status", "Serial device disconnected")
+        close()
     }
 
     function close(immediate_disconnect = true) {
@@ -124,6 +136,7 @@ class SerialPort {
     function handle_data(available) {
         if (port == null || available <= 0) return
         local data = port.read_string(available)
+        if (!port.is_open()) { connection_lost(); return }
         if (data == null || data.len() == 0) return
         buffer += data
         append_log("rx", data)
@@ -133,9 +146,14 @@ class SerialPort {
     function write(text) {
         if (!is_open()) throw "serial port is not open"
         append_log("tx", text)
-        local written = port.write_string(text)
-        if (written < text.len()) throw "short serial write"
-        return written
+        local offset = 0
+        while (offset < text.len()) {
+            local written = port.write_string(text.slice(offset))
+            if (!port.is_open()) { connection_lost(); throw "serial device disconnected during write" }
+            if (written <= 0) throw "serial write made no progress after " + offset + " bytes"
+            offset += written
+        }
+        return offset
     }
 
     function clear_buffer() {

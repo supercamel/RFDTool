@@ -36,6 +36,7 @@ class RfdSession {
         local last_len = -1
         local last_change_us = start_us
         while (true) {
+            ensure_open()
             local raw = serial.get_buffer()
             if (Parser.response_error(raw)) throw "radio returned ERROR"
             if (Parser.response_ok(raw)) return raw
@@ -69,6 +70,7 @@ class RfdSession {
             } catch (probe_error) {
             }
 
+            ensure_open()
             serial.clear_buffer()
             await sqgi.sleep(attempt == 0 ? 1200 : 1700)
             serial.write("+++")
@@ -132,6 +134,7 @@ class RfdSession {
         local start_us = GLib.get_monotonic_time()
         local last_error = "remote modem did not become ready"
         while (true) {
+            ensure_open()
             local elapsed = (GLib.get_monotonic_time() - start_us) / 1000
             local remaining = timeout_ms - elapsed
             if (remaining <= 0) throw last_error
@@ -158,6 +161,7 @@ class RfdSession {
         serial.write(command + "\r\n")
         local start_us = GLib.get_monotonic_time()
         while (true) {
+            ensure_open()
             local raw = serial.get_buffer()
             if (Parser.response_error(raw)) throw "radio returned ERROR"
             if (Parser.response_ok(raw) || raw_has_line(raw, command)) {

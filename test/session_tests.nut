@@ -89,6 +89,7 @@ class FakeSerial {
 }
 
 local loop = GLib.MainLoop.new(null, false)
+local failure = null
 
 async function run() {
     local serial = FakeSerial()
@@ -143,9 +144,11 @@ async function run() {
 }
 
 run().catch(function(e) {
+    failure = e
     print("session test error: " + e + "\n")
     loop.quit()
 })
 loop.run()
+if (failure != null) throw failure
 
 print("[OK] session tests passed\n")

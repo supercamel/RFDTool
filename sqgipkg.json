@@ -1,164 +1,92 @@
 {
+  "schema_version": 2,
   "name": "RFDTool",
   "app_id": "com.github.supercamel.rfdtool",
   "icon": "images/com.github.supercamel.rfdtool.png",
-  "desktop_terminal": false,
   "desktop_categories": [
     "Utility",
     "GTK"
   ],
   "script": "main.nut",
-  "target": "appimage",
-  "sqgi_source": {
-    "repo": "https://github.com/supercamel/sqgi.git",
-    "ref": "3a561e5bc4429283c39380898133f747cc26206f"
+  "runtime": {
+    "sqgi": "3a561e5bc4429283c39380898133f747cc26206f"
   },
-  "native_projects": [
+  "features": [
+    "gtk4"
+  ],
+  "native": [
     {
       "name": "gserial",
       "repo": "https://github.com/supercamel/gserial.git",
-      "dir": ".sqgipkg/native/gserial",
-      "branch": "master",
-      "update": true,
-      "build": [
-        "meson setup build --wipe || meson setup build",
-        "meson compile -C build"
-      ],
-      "libraries": [
-        "build/libgserial-1.0.so"
-      ],
-      "typelibs": [
-        "build/GSerial-1.0.typelib"
-      ]
+      "gi": {
+        "strategy": "host",
+        "namespace": "GSerial",
+        "version": "1.0",
+        "library": "gserial-1.0"
+      },
+      "ref": "d9bfcbcd59b43ba9bdbdc055fc928261efdb3562",
+      "dir": ".sqgipkg/native/gserial-0.3"
     }
   ],
+  "platforms": {
+    "linux": {
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "baseline": "ubuntu-22.04"
+    },
+    "windows": {
+      "architectures": [
+        "x86_64"
+      ],
+      "format": "installer"
+    },
+    "android": {
+      "architectures": [
+        "arm64-v8a",
+        "x86_64"
+      ],
+      "sdk": "noble-android-r4",
+      "min_sdk": 31,
+      "version_code": 25,
+      "version_name": "0.0.25-alpha",
+      "variant": "debug",
+      "namespaces": [
+        "Gtk-4.0",
+        "GSerial-1.0"
+      ],
+      "native": [
+        {
+          "name": "gserial",
+          "options": {
+            "android_test_backend": false
+          },
+          "gi": {
+            "strategy": "target"
+          }
+        }
+      ],
+      "runtime": "package"
+    }
+  },
   "linux": {
-    "arches": [
-      {
-        "arch": "x86_64",
-        "build_dir": "build-linux-x86_64",
-        "inherit_native_projects": false,
-        "deb": {
-          "download": true,
-          "suite": "jammy",
-          "packages": [
-            "libgtk-4-1",
-            "gir1.2-gtk-4.0",
-            "libglib2.0-0",
-            "libgirepository-1.0-1",
-            "libharfbuzz-gobject0"
-          ]
-        },
-        "build": [
-          "cmake -E rm -rf \"$SQGI_LINUX_BUILD_DIR\"",
-          "cmake -S \"$SQGI_SOURCE_DIR\" -B \"$SQGI_LINUX_BUILD_DIR\" -G Ninja ${SQGI_LINUX_CMAKE_TOOLCHAIN:+-DCMAKE_TOOLCHAIN_FILE=\"$SQGI_LINUX_CMAKE_TOOLCHAIN\"} -DCMAKE_BUILD_TYPE=Release -DSQ_ENABLE_JIT=ON",
-          "cmake --build \"$SQGI_LINUX_BUILD_DIR\""
-        ],
-        "native_projects": [
-          {
-            "name": "gserial",
-            "repo": "https://github.com/supercamel/gserial.git",
-            "dir": ".sqgipkg/native/gserial",
-            "branch": "master",
-            "update": true,
-            "build": [
-              "meson setup build-linux-x86_64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"} --wipe || meson setup build-linux-x86_64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"}",
-              "meson compile -C build-linux-x86_64"
-            ],
-            "libraries": [
-              "build-linux-x86_64/libgserial-1.0.so"
-            ],
-            "typelibs": [
-              "build-linux-x86_64/GSerial-1.0.typelib"
-            ]
-          }
-        ]
-      },
-      {
-        "arch": "aarch64",
-        "build_dir": "build-linux-aarch64",
-        "inherit_native_projects": false,
-        "deb": {
-          "download": true,
-          "suite": "jammy",
-          "packages": [
-            "libgtk-4-1",
-            "gir1.2-gtk-4.0",
-            "libglib2.0-0",
-            "libgirepository-1.0-1",
-            "libharfbuzz-gobject0"
-          ]
-        },
-        "build": [
-          "cmake -E rm -rf \"$SQGI_LINUX_BUILD_DIR\"",
-          "cmake -S \"$SQGI_SOURCE_DIR\" -B \"$SQGI_LINUX_BUILD_DIR\" -G Ninja ${SQGI_LINUX_CMAKE_TOOLCHAIN:+-DCMAKE_TOOLCHAIN_FILE=\"$SQGI_LINUX_CMAKE_TOOLCHAIN\"} -DCMAKE_BUILD_TYPE=Release -DSQ_ENABLE_JIT=ON",
-          "cmake --build \"$SQGI_LINUX_BUILD_DIR\""
-        ],
-        "native_projects": [
-          {
-            "name": "gserial",
-            "repo": "https://github.com/supercamel/gserial.git",
-            "dir": ".sqgipkg/native/gserial",
-            "branch": "master",
-            "update": true,
-            "build": [
-              "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host --wipe || env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host",
-              "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson compile -C build-host",
-              "sh ../../../scripts/disable-cross-gir.sh meson.build",
-              "meson setup build-linux-aarch64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"} --wipe || meson setup build-linux-aarch64 ${SQGI_LINUX_MESON_CROSS_FILE:+--cross-file \"$SQGI_LINUX_MESON_CROSS_FILE\"}",
-              "meson compile -C build-linux-aarch64"
-            ],
-            "libraries": [
-              "build-linux-aarch64/libgserial-1.0.so"
-            ],
-            "typelibs": [
-              "build-host/GSerial-1.0.typelib"
-            ]
-          }
-        ]
-      }
+    "packages": [
+      "libgirepository-1.0-1",
+      "libharfbuzz-gobject0"
     ]
   },
   "windows": {
-    "msys2_prefix": "mingw64",
-    "gdk_backend": "win32",
-    "build_dir": "build-windows-x86_64",
-    "packages": [
-    ],
     "files": [
       "images/com.github.supercamel.rfdtool.png=share/icons/hicolor/256x256/apps/com.github.supercamel.rfdtool.png"
-    ],
-    "build": [
-      "cmake -E rm -rf \"$SQGI_WINDOWS_BUILD_DIR\"",
-      "cmake -S \"$SQGI_SOURCE_DIR\" -B \"$SQGI_WINDOWS_BUILD_DIR\" -G Ninja -DCMAKE_TOOLCHAIN_FILE=\"$SQGI_WIN_CMAKE_TOOLCHAIN\" -DCMAKE_BUILD_TYPE=Release -DSQ_ENABLE_JIT=ON",
-      "cmake --build \"$SQGI_WINDOWS_BUILD_DIR\" --target sqgi sqgi-bin"
-    ],
-    "native_projects": [
-      {
-        "name": "gserial",
-        "repo": "https://github.com/supercamel/gserial.git",
-        "dir": ".sqgipkg/native/gserial",
-        "branch": "master",
-        "update": true,
-        "build": [
-          "sh ../../../scripts/disable-cross-gir.sh meson.build",
-          "meson setup build-windows --wipe --cross-file \"$SQGI_MESON_CROSS_FILE\" || meson setup build-windows --cross-file \"$SQGI_MESON_CROSS_FILE\"",
-          "meson compile -C build-windows",
-          "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host --wipe || env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson setup build-host",
-          "env -i PATH=/usr/bin:/bin HOME=\"$HOME\" meson compile -C build-host",
-          "sed 's/shared-library=\"libgserial-1.0.so\"/shared-library=\"libgserial-1.0.dll\"/' build-host/GSerial-1.0.gir > build-windows/GSerial-1.0.gir",
-          "g-ir-compiler build-windows/GSerial-1.0.gir --output build-windows/GSerial-1.0.typelib"
-        ],
-        "libraries": [
-          "build-windows/libgserial-1.0.dll"
-        ],
-        "typelibs": [
-          "build-windows/GSerial-1.0.typelib"
-        ]
-      }
     ],
     "nsis_options": {
       "icon": "images/rfdtool.ico"
     }
-  }
+  },
+  "compile_scripts": false,
+  "target": "all",
+  "files": [
+    "images/com.github.supercamel.rfdtool.png=usr/share/sqgi/app/images/com.github.supercamel.rfdtool.png"
+  ]
 }
