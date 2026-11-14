@@ -8,6 +8,22 @@ local android = GLib.getenv("ANDROID_ROOT") != null
 
 function check(ok, message) { if (!ok) throw message }
 
+async function wait_for_allocation(win) {
+    local started = GLib.get_monotonic_time()
+    local last_width = 0, last_height = 0, stable = 0
+    while (GLib.get_monotonic_time() - started < 10000000) {
+        await sqgi.sleep(100)
+        local width = win.get_width(), height = win.get_height()
+        if (win.get_mapped() && width > 0 && height > 0 &&
+            width == last_width && height == last_height) stable++
+        else stable = 0
+        if (stable >= 3) return
+        last_width = width
+        last_height = height
+    }
+    throw "window did not receive a stable allocation within 10 seconds"
+}
+
 function check_widths(widget, width) {
     if (!widget.get_mapped()) return
     check(widget.get_width() <= width + 1,
@@ -32,7 +48,9 @@ local app = UI.create_app({
             local sizes = android ? [[0, 0]] : [[360, 640], [320, 568], [640, 360], [800, 1280], [1280, 800]]
             foreach (size in sizes) {
                 if (!android) w.win.set_default_size(size[0], size[1])
-                await sqgi.sleep(300)
+                // A cold Android renderer can take longer than a fixed delay
+                // to map its first surface. Never use a zero-sized viewport.
+                await wait_for_allocation(w.win)
                 local width = w.win.get_width()
                 if (!android) check(width <= size[0], "window cannot fit requested width " + size[0] + ": " + width)
                 if (!android) check(w.win.get_height() <= size[1], "window cannot fit requested height " + size[1])
