@@ -24,6 +24,8 @@ Prebuilt binaries are attached to the
 
 Android downloads are debug-signed alpha builds for sideloading.
 
+Linux packages target Ubuntu 24.04 or a compatible newer distribution.
+
 The ARM AppImage should work on Raspberry Pi-class boards running a 64-bit Linux
 desktop. It has been tested on an Orange Pi running Ubuntu 24.04.
 
@@ -256,6 +258,8 @@ Replace `COM3` with the actual serial port used by your modem.
 
 ## Linux development from source
 
+The following commands target Ubuntu 24.04.
+
 Running directly with `sqgi main.nut` on Linux requires SQGI, GSerial, and GTK 4
 runtime packages to be installed on the system.
 
@@ -268,10 +272,12 @@ cd sqgi
 sudo apt install cmake build-essential pkg-config \
   libglib2.0-dev libgirepository1.0-dev libffi-dev libcairo2-dev
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DSQ_ENABLE_JIT=OFF -DSQGI_ENABLE_KERNELS=OFF
 cmake --build build -j"$(nproc)"
 sudo cmake --install build --prefix /usr/local
 sudo ldconfig
+export GI_TYPELIB_PATH=/usr/local/lib/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}
 ```
 
 Install GSerial from <https://github.com/supercamel/gserial>:
@@ -283,10 +289,11 @@ cd gserial
 sudo apt install build-essential meson ninja-build pkg-config \
   libglib2.0-dev libgirepository1.0-dev
 
-meson setup build --prefix=/usr/local
+meson setup build --prefix=/usr/local --libdir=lib
 meson compile -C build
 sudo meson install -C build
 sudo ldconfig
+export GI_TYPELIB_PATH=/usr/local/lib/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}
 ```
 
 Install GTK 4 runtime/introspection packages if they are not already present:
@@ -515,8 +522,8 @@ adapter and radio.
 
 All manifests pin GSerial 0.3.0's `DeviceManager.list_devices()` enumeration
 and USB permission API at `d9bfcbcd59b43ba9bdbdc055fc928261efdb3562`. The desktop
-release runtime remains pinned to its established revision; Android packaging
-uses SQGI `8d74d83867abb4809ffdbc4956650966f9801ff4`.
+release runtime remains pinned to its established revision; the build tools
+use SQGI `8d74d83867abb4809ffdbc4956650966f9801ff4`.
 
 The repository keeps one production manifest (`sqgipkg.json`) and two Android
 test manifests: the serial fixture enables GSerial's simulated USB backend; the

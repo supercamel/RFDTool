@@ -25,7 +25,7 @@ jobs:
   desktop:
     env:
       GI_TYPELIB_PATH: /usr/local/lib/girepository-1.0
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout RFDTool
@@ -44,21 +44,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential gcc-12 g++-12 cmake ninja-build pkg-config git file ca-certificates wget \
+            build-essential cmake ninja-build pkg-config git file ca-certificates wget \
             meson valac gobject-introspection \
             libglib2.0-dev libgirepository1.0-dev libffi-dev libcairo2-dev libgtk-4-dev \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static binfmt-support \
-            mingw-w64 nsis squashfs-tools xvfb xauth python3 python3-pip libxml2-utils gir1.2-soup-3.0 glib-networking
-
-      - name: Install current CMake for cross-build recipes
-        run: |
-          python3 -m pip install --user cmake==3.28.4
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            mingw-w64 nsis squashfs-tools xvfb xauth python3 libxml2-utils gir1.2-soup-3.0 glib-networking
 
       - name: Build and install sqgi
         run: |
           {
-            cmake -S sqgi -B sqgi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 -DSQ_ENABLE_JIT=OFF -DSQGI_ENABLE_KERNELS=OFF
+            cmake -S sqgi -B sqgi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSQ_ENABLE_JIT=OFF -DSQGI_ENABLE_KERNELS=OFF
             cmake --build sqgi/build
             sudo cmake --install sqgi/build --prefix /usr/local
             sudo ldconfig

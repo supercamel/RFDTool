@@ -34,7 +34,7 @@
         "x86_64",
         "aarch64"
       ],
-      "baseline": "ubuntu-22.04"
+      "baseline": "ubuntu-24.04"
     },
     "windows": {
       "architectures": [
