@@ -74,6 +74,38 @@ disconnect and connect the second radio without refreshing it. Enable
 `Write all loaded settings`, use `Apply Local`, then save when the write is
 complete.
 
+## Screenshots
+
+Desktop parameter editing, showing simulated local and remote modem data:
+
+<p>
+  <a href="images/screenshots/desktop-parameters.png">
+    <img src="images/screenshots/desktop-parameters.png" alt="RFDTool desktop Parameters tab with local and remote radio settings" width="960">
+  </a>
+</p>
+
+Android phone and tablet layouts, captured in the emulator with no modem attached.
+Click an image to view it at full size.
+
+<table>
+  <tr>
+    <th>Phone · Radio Link</th>
+    <th>Tablet · Diagnostics</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <a href="images/screenshots/android-phone-radio.png">
+        <img src="images/screenshots/android-phone-radio.png" alt="RFDTool Radio Link tab on an Android phone in portrait orientation" width="280">
+      </a>
+    </td>
+    <td valign="top">
+      <a href="images/screenshots/android-tablet-diagnostics.png">
+        <img src="images/screenshots/android-tablet-diagnostics.png" alt="RFDTool Diagnostics tab on an Android tablet in landscape orientation" width="640">
+      </a>
+    </td>
+  </tr>
+</table>
+
 ## Local, Remote, Apply, Save
 
 RFDTool shows the two sides separately:
@@ -528,8 +560,9 @@ use SQGI `8d74d83867abb4809ffdbc4956650966f9801ff4`.
 The repository keeps one production manifest (`sqgipkg.json`) and two Android
 test manifests: the serial fixture enables GSerial's simulated USB backend; the
 layout fixture launches the same UI allocation checks used on desktop. Both
-are built and exercised in CI. `images/` contains the app/installer icons; the
-README and GitHub workflow document and automate the current build process.
+are built and exercised in CI. `images/` contains the app/installer icons and
+screenshots documenting the desktop, phone, and tablet interfaces. The README
+and GitHub workflow document and automate the current build process.
 Generated packages, local locks, caches, and logs are ignored.
 
 `test-android.nut` and `test-layout.nut` are APK entry points. They stay at the
