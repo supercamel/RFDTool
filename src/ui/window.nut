@@ -108,7 +108,7 @@ function remove_owned_desktop_file(path) {
         if (text.find("X-RFDTool-AppImage=true") == null &&
             text.find("Icon=rfdtool") == null &&
             text.find("StartupWMClass=rfdtool") == null) return
-        GLib.remove(path)
+        Gio.File.new_for_path(path).delete(null)
     } catch (e) {
         print("desktop cleanup warning: " + e + "\n")
     }
@@ -183,7 +183,8 @@ function install_appimage_desktop_entry(app_id) {
             "X-RFDTool-AppImage=true\n"
 
         GLib.file_set_contents(desktop_path, desktop, -1)
-        GLib.chmod(desktop_path, 493)
+        Gio.File.new_for_path(desktop_path).set_attribute_uint32(
+            "unix::mode", 493, Gio.FileQueryInfoFlags.none, null)
 
         return desktop_path
     } catch (e) {

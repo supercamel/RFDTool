@@ -23,6 +23,8 @@ env:
 
 jobs:
   desktop:
+    env:
+      GI_TYPELIB_PATH: /usr/local/lib/girepository-1.0
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -71,7 +73,7 @@ jobs:
 
       - name: Install GSerial for runtime tests
         run: |
-          meson setup gserial/build gserial --prefix=/usr/local
+          meson setup gserial/build gserial --prefix=/usr/local --libdir=lib
           meson compile -C gserial/build
           meson test -C gserial/build --print-errorlogs
           sudo meson install -C gserial/build
@@ -125,6 +127,7 @@ jobs:
     env:
       # Ignore the runner's unrelated NDK; setup installs the pinned r28c.
       ANDROID_NDK_HOME: ""
+      GRADLE_HOME: ""
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     strategy:

@@ -6,14 +6,15 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 env = dict(os.environ, GTK_A11Y="none", GSK_RENDERER="cairo")
-checks = [
-    (["sqgicheck", "main.nut"], None),
-    (["sqgicheck", "test/layout_tests.nut"], None),
+sources = sorted([*ROOT.glob("*.nut"), *ROOT.glob("src/**/*.nut"), *ROOT.glob("test/**/*.nut")])
+checks = [(["sqgicheck", "--summary", *[str(source.relative_to(ROOT)) for source in sources]], None)]
+checks += [
     (["sqgi", "main.nut", "--self-test"], "[OK] all self-tests passed"),
     (["xvfb-run", "-a", "python3", "test/gtk_serial_test.py"], "GTK_SERIAL_PASS"),
     (["xvfb-run", "-a", "-s", "-screen 0 1600x1600x24", "sqgi", "test/layout_tests.nut"], "RFDTOOL_LAYOUT_PASS"),
 ]
 for command, marker in checks:
+    print("Checking: " + " ".join(command), flush=True)
     result = subprocess.run(command, cwd=ROOT, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
     print(result.stdout, flush=True)
