@@ -1620,11 +1620,14 @@ function create_app(options = null) {
                         State.serial = null
                         State.session = null
                     }
-                    app.quit()
+                    // Destroy the native surface before Gtk.Application exits.
+                    // Quitting with a live Android window leaves render work
+                    // targeting a surface whose native context is already gone.
+                    win.destroy()
                 }
                 cleanup_and_quit().catch(function(e) {
                     print("window cleanup error: " + e + "\n")
-                    app.quit()
+                    win.destroy()
                 })
                 return false
             })

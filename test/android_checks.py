@@ -31,9 +31,15 @@ def wait_for(app, marker, name):
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         logs = adb("logcat", "-d", "-v", "brief")
-        if "RFDTOOL_LAYOUT_FAIL" in logs or "RFDTOOL_ANDROID_SERIAL_FAIL" in logs or "AN ERROR HAS OCCURRED" in logs:
+        if any(error in logs for error in ("RFDTOOL_LAYOUT_FAIL", "RFDTOOL_ANDROID_SERIAL_FAIL",
+                                          "AN ERROR HAS OCCURRED", "Fatal signal", "FATAL EXCEPTION")):
             break
         if marker in logs:
+            # Include asynchronous surface teardown, not just the success print.
+            time.sleep(1)
+            logs = adb("logcat", "-d", "-v", "brief")
+            if any(error in logs for error in ("AN ERROR HAS OCCURRED", "Fatal signal", "FATAL EXCEPTION")):
+                break
             (output / f"{name}.log").write_text(logs)
             print(f"{name}: {marker}", flush=True)
             return
@@ -71,7 +77,7 @@ try:
         time.sleep(3)
         adb("shell", "pidof", "com.github.supercamel.rfdtool")
         logs = adb("logcat", "-d", "-v", "brief")
-        assert "AN ERROR HAS OCCURRED" not in logs and "FATAL EXCEPTION" not in logs, logs
+        assert not any(error in logs for error in ("AN ERROR HAS OCCURRED", "FATAL EXCEPTION", "Fatal signal")), logs
         with (output / f"{name}.png").open("wb") as image:
             subprocess.run([args.adb, "-s", args.serial, "exec-out", "screencap", "-p"], stdout=image, check=True, timeout=30)
         adb("shell", "am", "force-stop", "com.github.supercamel.rfdtool")
