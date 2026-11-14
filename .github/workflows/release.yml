@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 env:
   # appimagetool runs as an AppImage; GitHub runners cannot always mount FUSE,
   # so extract-and-run instead of mounting.
@@ -38,7 +42,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config git file ca-certificates wget \
+            build-essential gcc-12 g++-12 cmake ninja-build pkg-config git file ca-certificates wget \
             meson valac gobject-introspection \
             libglib2.0-dev libgirepository1.0-dev libffi-dev libcairo2-dev libgtk-4-dev \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static binfmt-support \
@@ -52,7 +56,7 @@ jobs:
       - name: Build and install sqgi
         run: |
           {
-            cmake -S sqgi -B sqgi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSQ_ENABLE_JIT=OFF -DSQGI_ENABLE_KERNELS=OFF
+            cmake -S sqgi -B sqgi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 -DSQ_ENABLE_JIT=OFF -DSQGI_ENABLE_KERNELS=OFF
             cmake --build sqgi/build
             sudo cmake --install sqgi/build --prefix /usr/local
             sudo ldconfig
@@ -75,19 +79,19 @@ jobs:
 
       - name: Check scripts, serial integration, and phone/tablet layouts
         working-directory: RFDTool
-        run: python3 test/run_checks.py
+        run: python3 test/run_checks.py 2>&1 | tee "$RUNNER_TEMP/rfdtool-checks.log"
 
       - name: Build Linux x86_64 AppImage
         working-directory: RFDTool
-        run: sqgipkg --target appimage --appimage-arch x86_64
+        run: sqgipkg --target appimage --appimage-arch x86_64 2>&1 | tee "$RUNNER_TEMP/rfdtool-linux-x86_64.log"
 
       - name: Build Linux aarch64 AppImage
         working-directory: RFDTool
-        run: sqgipkg --target appimage --appimage-arch aarch64
+        run: sqgipkg --target appimage --appimage-arch aarch64 2>&1 | tee "$RUNNER_TEMP/rfdtool-linux-aarch64.log"
 
       - name: Build Windows installer
         working-directory: RFDTool
-        run: sqgipkg --target win-nsis
+        run: sqgipkg --target win-nsis 2>&1 | tee "$RUNNER_TEMP/rfdtool-windows.log"
 
       - name: Collect artifacts
         working-directory: RFDTool
@@ -118,6 +122,9 @@ jobs:
           PYREPORT
 
   android:
+    env:
+      # Ignore the runner's unrelated NDK; setup installs the pinned r28c.
+      ANDROID_NDK_HOME: ""
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     strategy:
@@ -165,7 +172,7 @@ jobs:
         run: |
           sqgipkg check --platform android --arch ${{ matrix.arch }}
           sqgipkg build --platform android --arch ${{ matrix.arch }} \
-            --build-result build-android-result.json
+            --build-result build-android-result.json 2>&1 | tee "$RUNNER_TEMP/rfdtool-android-build.log"
           mkdir -p artifacts
           cp dist-android-${{ matrix.arch }}/com.github.supercamel.rfdtool-${{ matrix.arch }}-debug.apk \
             artifacts/RFDTool-${{ matrix.arch }}.apk
@@ -188,7 +195,7 @@ jobs:
       - name: Test Android at phone and tablet sizes
         if: matrix.arch == 'x86_64'
         working-directory: RFDTool
-        run: python3 test/android_checks.py
+        run: python3 test/android_checks.py 2>&1 | tee "$RUNNER_TEMP/rfdtool-android-checks.log"
 
       - name: Save Android test evidence
         if: always() && matrix.arch == 'x86_64'
