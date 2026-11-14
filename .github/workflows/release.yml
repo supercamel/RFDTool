@@ -117,7 +117,7 @@ jobs:
           import os
           from pathlib import Path
           for log in Path(os.environ['RUNNER_TEMP']).glob('rfdtool-*.log'):
-              tail = log.read_text(errors='replace')[-12000:]
+              tail = log.read_text(errors='replace')[-3500:]
               message = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error title={log.name}::{message}')
           PYREPORT
@@ -220,7 +220,7 @@ jobs:
           import os
           from pathlib import Path
           for log in Path(os.environ['RUNNER_TEMP']).glob('rfdtool-*.log'):
-              tail = log.read_text(errors='replace')[-12000:]
+              tail = log.read_text(errors='replace')[-3500:]
               message = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error title={log.name}::{message}')
           PYREPORT

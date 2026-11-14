@@ -41,7 +41,7 @@ def wait_for(app, marker, name):
     (output / f"{name}.log").write_text(logs)
     print("\n".join(line for line in logs.splitlines() if any(
         marker in line for marker in ("SqgiAndroid", app, "FATAL", "Fatal", "ANR", "libc", "Gtk-")
-    ))[-16000:], flush=True)
+    ))[-3000:], flush=True)
     raise AssertionError(f"{name} failed; see {output / (name + '.log')}")
 
 
